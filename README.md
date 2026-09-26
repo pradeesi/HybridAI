@@ -216,10 +216,20 @@ Choose the playbook that fits your target environment:
 
 ### Playbook B: Home Lab & Bare-Metal Edge Server (Docker Compose)
 
-*Ideal for self-hosted production in a home lab (e.g. Proxmox LXC container or VM on an x86 host) with complete observability (PostgreSQL, FastMCP, CRM, Prometheus, Loki, Grafana).*
+*Ideal for self-hosted production in a home lab (e.g. Proxmox LXC container or VM on an x86 host) with complete observability. **Docker Compose takes care of 100% of the installation, provisioning, and pre-wiring for PostgreSQL, Grafana, Prometheus, and Loki automatically—no manual package installation is required on the host.***
+
+#### What Docker Compose Installs & Configures Automatically:
+- **PostgreSQL 16 (`postgres:16-alpine`)**: Containerized database engine with persistent volume (`pg_data`) and automatic synthetic data bootstrapping.
+- **Prometheus 2.50+ (`prom/prometheus:v2.50.1`)**: Automated metrics scraper pre-configured with [`deploy/prometheus/prometheus.yml`](deploy/prometheus/prometheus.yml).
+- **Grafana Loki 3.0+ (`grafana/loki:3.0.0`)**: Centralized TSDB log engine pre-configured with [`deploy/loki/loki-config.yml`](deploy/loki/loki-config.yml).
+- **Grafana 10.4+ (`grafana/grafana:10.4.0`)**: Pre-provisioned with Prometheus & Loki datasources and auto-loaded Security Audit & Call Center Ops dashboards.
+
+---
+
+#### Step-by-Step Instructions:
 
 1. **Prerequisites on Host**:
-   - Ubuntu 22.04 / Debian 12 (or any Linux distribution) with Docker & Docker Compose plugin installed.
+   - Ubuntu 22.04 / Debian 12 (or any Linux distribution) with Docker & Docker Compose plugin installed (`sudo apt install docker.io docker-compose-v2`).
    - Recommended specs: 4 vCPUs, 8 GB RAM, 30 GB disk.
 
 2. **(Recommended) Mesh VPN Configuration (Tailscale / WireGuard)**:
@@ -232,6 +242,7 @@ Choose the playbook that fits your target environment:
    ```
 
 3. **Deploy the Complete Container Stack:**
+   *(Builds application containers and automatically pulls/configures Postgres, Prometheus, Loki, and Grafana)*
    ```bash
    cd HybridAI
    cp .env.example .env
@@ -239,15 +250,16 @@ Choose the playbook that fits your target environment:
    docker compose up -d --build
    ```
 
-4. **Verify All Containers are Healthy:**
+4. **Verify All 6 Services are Healthy:**
    ```bash
    docker compose ps
    ```
+   *Expected output: `telecom-postgres` (healthy), `telecom-mcp-server` (healthy), `telecom-crm-console` (healthy), `telecom-prometheus` (running), `telecom-loki` (running), `telecom-grafana` (running).*
 
-5. **Access Application & Observability Endpoints:**
+5. **Access Pre-Wired Endpoints:**
    - **CRM Frontline Console**: `http://<tailscale-ip-or-host>:8000`
    - **FastMCP Server (SSE)**: `http://<tailscale-ip-or-host>:8001/sse`
-   - **Grafana Security & Ops Dashboards**: `http://<tailscale-ip-or-host>:3000` (User: `admin` / Password: value from `.env`)
+   - **Grafana Security & Ops Dashboards**: `http://<tailscale-ip-or-host>:3000` (User: `admin` / Password: value from `.env` — Dashboards are pre-loaded!)
    - **Prometheus Metrics**: `http://<tailscale-ip-or-host>:9090`
    - **Loki Log API**: `http://<tailscale-ip-or-host>:3100`
 
@@ -326,9 +338,30 @@ Choose the playbook that fits your target environment:
        --from-literal=pg-password="${POSTGRES_PASSWORD}"
    ```
 
-3. **Deploy Workload:**
+3. **Deploy Workloads:**
    ```bash
-   kubectl apply -f deploy/k8s/
+   kubectl apply -f deploy/k8s/deployment.yaml
+   ```
+
+4. **(Optional) Deploy Database & Observability Stack to Kubernetes via Helm:**
+   *If you do not already have an external database or observability cluster, you can install them in seconds with standard Helm charts:*
+   ```bash
+   helm repo add bitnami https://charts.bitnami.com/bitnami
+   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+   helm repo add grafana https://grafana.github.io/helm-charts
+   helm repo update
+
+   # 1. Install PostgreSQL
+   helm install telecom-pg bitnami/postgresql \
+       --set auth.username=telecom_user \
+       --set auth.password=telecom_secure_pass \
+       --set auth.database=telecom_db
+
+   # 2. Install Prometheus & Grafana stack
+   helm install telecom-prom prometheus-community/kube-prometheus-stack
+
+   # 3. Install Grafana Loki log aggregator
+   helm install telecom-loki grafana/loki-stack
    ```
 
 ---
