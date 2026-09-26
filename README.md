@@ -510,3 +510,87 @@ To connect the **Google Gemini Enterprise App** to this FastMCP server:
 - *"Marcus Vance says his mobile internet is suddenly crawling. Check his 5G subscription and tell me what plan booster we can pitch to fix it."*
 - *"Amina Al-Mansoor is disputing a roaming charge from London. What charges were billed and what travel pass should I offer her?"*
 - *"David Chen is happy with his service. Does his usage pattern qualify him for a fiber speed tier upgrade?"*
+
+---
+
+## 9. Complete Environment Teardown & Cleanup Playbooks
+
+To prevent unwanted cloud billing or eliminate orphaned containers, volumes, and networks, execute the teardown playbook corresponding to your environment:
+
+### Teardown A: Local Standalone Python
+```bash
+# 1. Stop background processes (Ctrl+C in terminal windows)
+# 2. Deactivate and remove Python virtual environment
+deactivate 2>/dev/null || true
+rm -rf .venv/
+
+# 3. Clean up local SQLite and cache files
+rm -f telecom_local.db* test_telecom.db*
+find . -type d -name "__pycache__" -exec rm -rf {} +
+```
+
+---
+
+### Teardown B: Home Lab / Proxmox (Docker Compose)
+*Stops and purges all 6 containers, networks, persistent storage volumes, and local images with a single command:*
+```bash
+cd HybridAI
+
+# 1. Stop and purge containers, networks, persistent volumes (-v), and built images (--rmi all)
+docker compose down -v --rmi all --remove-orphans
+
+# 2. (Optional) If running in a Proxmox LXC container and you wish to destroy the entire guest:
+# Run on the Proxmox Host shell:
+pct stop 200
+pct destroy 200
+```
+
+---
+
+### Teardown C: Google Cloud Run & Cloud SQL
+*Deletes all serverless services, database instances, and artifact images in Google Cloud:*
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
+
+# 1. Delete Cloud Run Services
+gcloud run services delete telecom-mcp-server --region=${REGION} --project=${PROJECT_ID} --quiet
+gcloud run services delete telecom-crm-console --region=${REGION} --project=${PROJECT_ID} --quiet
+
+# 2. Delete Cloud SQL Instance (deletes all databases, users, and automated backups)
+gcloud sql instances delete telecom-pg-instance --project=${PROJECT_ID} --quiet
+
+# 3. Delete Artifact Registry Repository & Images
+gcloud artifacts repositories delete hybrid-ai-repo --location=${REGION} --project=${PROJECT_ID} --quiet
+
+# 4. (Optional) Delete Secrets from Secret Manager if created
+gcloud secrets delete telecom-mcp-token --project=${PROJECT_ID} --quiet 2>/dev/null || true
+```
+
+---
+
+### Teardown D: Google Kubernetes Engine (GKE)
+*Purges Kubernetes workloads, persistent storage claims, Helm releases, and deletes the GKE cluster:*
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
+export CLUSTER_NAME="telecom-hybrid-cluster"
+
+# 1. Delete Application Deployments, Services, and Secrets
+kubectl delete -f deploy/k8s/deployment.yaml --ignore-not-found
+kubectl delete secret telecom-secrets --ignore-not-found
+
+# 2. Uninstall Helm Releases (Postgres, Prometheus, Grafana, Loki)
+helm uninstall telecom-pg 2>/dev/null || true
+helm uninstall telecom-prom 2>/dev/null || true
+helm uninstall telecom-loki 2>/dev/null || true
+
+# 3. Delete all dynamically provisioned Persistent Volume Claims (PVCs)
+kubectl delete pvc --all
+
+# 4. Delete the GKE Cluster (releases all compute instances, load balancers, and node pools)
+gcloud container clusters delete ${CLUSTER_NAME} --region=${REGION} --project=${PROJECT_ID} --quiet
+
+# 5. Delete Artifact Registry Repository
+gcloud artifacts repositories delete hybrid-ai-repo --location=${REGION} --project=${PROJECT_ID} --quiet
+```
