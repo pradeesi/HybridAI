@@ -308,95 +308,147 @@ Choose the playbook that fits your target environment:
 
 ---
 
-### Playbook C: Google Cloud Run (Serverless Deployment)
+### Playbook C: Google Cloud Run (Serverless Managed Containers)
 
-*Ideal for cloud-hosted scalability without managing VMs. Deploys the FastMCP server and CRM web console to managed containers on Google Cloud.*
+*Ideal for cloud-hosted scalability without managing VMs. Fully serverless execution where Google Cloud handles TLS certificates, auto-scaling, and health monitoring.*
 
-1. **Configure Google Cloud Project & Artifact Registry:**
-   ```bash
-   export PROJECT_ID="your-gcp-project-id"
-   export REGION="us-central1"
-   
-   gcloud config set project ${PROJECT_ID}
-   
-   gcloud artifacts repositories create hybrid-ai-repo \
-       --repository-format=docker \
-       --location=${REGION} \
-       --description="Telecom HybridAI Repository"
-   ```
+#### 1. Enable Required Google Cloud APIs:
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
 
-2. **Build and Push the Container Image:**
-   ```bash
-   gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
-   ```
+gcloud config set project ${PROJECT_ID}
 
-3. **Deploy FastMCP Server to Cloud Run:**
-   ```bash
-   gcloud run deploy telecom-mcp-server \
-       --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
-       --platform managed \
-       --region ${REGION} \
-       --command "python3,-m,src.mcp.server" \
-       --port 8001 \
-       --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN} \
-       --allow-unauthenticated
-   ```
+gcloud services enable run.googleapis.com \
+                       artifactregistry.googleapis.com \
+                       cloudbuild.googleapis.com \
+                       sqladmin.googleapis.com \
+                       secretmanager.googleapis.com
+```
 
-4. **Deploy CRM Agent Console to Cloud Run:**
-   ```bash
-   gcloud run deploy telecom-crm-console \
-       --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
-       --platform managed \
-       --region ${REGION} \
-       --command "python3,-m,src.crm.app" \
-       --port 8000 \
-       --set-env-vars APP_ENV=production,CRM_PORT=8000,MCP_PORT=8001 \
-       --allow-unauthenticated
-   ```
+#### 2. Provision Managed Database (Google Cloud SQL for PostgreSQL):
+```bash
+# 1. Create a Cloud SQL PostgreSQL 16 instance
+gcloud sql instances create telecom-pg-instance \
+    --database-version=POSTGRES_16 \
+    --tier=db-f1-micro \
+    --region=${REGION} \
+    --root-password="telecom_secure_pass"
+
+# 2. Create the application database and user
+gcloud sql databases create telecom_db --instance=telecom-pg-instance
+gcloud sql users create telecom_user --instance=telecom-pg-instance --password="telecom_secure_pass"
+
+# 3. Retrieve the Cloud SQL Instance Connection Name
+INSTANCE_CONNECTION_NAME=$(gcloud sql instances describe telecom-pg-instance --format='value(connectionName)')
+echo "Cloud SQL Connection Name: ${INSTANCE_CONNECTION_NAME}"
+```
+
+#### 3. Build & Push Image to Google Artifact Registry:
+```bash
+# 1. Create Docker repository in Artifact Registry
+gcloud artifacts repositories create hybrid-ai-repo \
+    --repository-format=docker \
+    --location=${REGION} \
+    --description="Telecom HybridAI Repository"
+
+# 2. Build and submit container image via Cloud Build
+gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
+```
+
+#### 4. Deploy FastMCP Server to Cloud Run:
+```bash
+gcloud run deploy telecom-mcp-server \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+    --platform managed \
+    --region ${REGION} \
+    --command "python3,-m,src.mcp.server" \
+    --port 8001 \
+    --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
+    --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
+    --allow-unauthenticated
+```
+*Note the generated HTTPS URL (e.g. `https://telecom-mcp-server-xyz-uc.a.run.app`). The SSE endpoint will be `https://telecom-mcp-server-xyz-uc.a.run.app/sse`.*
+
+#### 5. Deploy CRM Agent Console to Cloud Run:
+```bash
+gcloud run deploy telecom-crm-console \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+    --platform managed \
+    --region ${REGION} \
+    --command "python3,-m,src.crm.app" \
+    --port 8000 \
+    --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
+    --set-env-vars APP_ENV=production,CRM_PORT=8000,MCP_PORT=8001,DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
+    --allow-unauthenticated
+```
 
 ---
 
 ### Playbook D: Google Kubernetes Engine (GKE)
 
-*Ideal for enterprise Kubernetes clusters.*
+*Ideal for enterprise Kubernetes clusters with automated pod scaling, rolling updates, and internal load balancing.*
 
-1. **Connect to Your Cluster:**
-   ```bash
-   gcloud container clusters get-credentials ${CLUSTER_NAME} --region ${REGION} --project ${PROJECT_ID}
-   ```
+#### 1. Enable GKE API & Provision Cluster:
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
+export CLUSTER_NAME="telecom-hybrid-cluster"
 
-2. **Create Required Secrets:**
-   ```bash
-   kubectl create secret generic telecom-secrets \
-       --from-literal=mcp-token="${MCP_AUTH_TOKEN}" \
-       --from-literal=pg-password="${POSTGRES_PASSWORD}"
-   ```
+gcloud services enable container.googleapis.com
 
-3. **Deploy Workloads:**
-   ```bash
-   kubectl apply -f deploy/k8s/deployment.yaml
-   ```
+# Create a modern GKE Autopilot cluster
+gcloud container clusters create-auto ${CLUSTER_NAME} \
+    --region ${REGION} \
+    --project ${PROJECT_ID}
 
-4. **(Optional) Deploy Database & Observability Stack to Kubernetes via Helm:**
-   *If you do not already have an external database or observability cluster, you can install them in seconds with standard Helm charts:*
-   ```bash
-   helm repo add bitnami https://charts.bitnami.com/bitnami
-   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-   helm repo add grafana https://grafana.github.io/helm-charts
-   helm repo update
+# Connect kubectl to the cluster
+gcloud container clusters get-credentials ${CLUSTER_NAME} --region ${REGION} --project ${PROJECT_ID}
+```
 
-   # 1. Install PostgreSQL
-   helm install telecom-pg bitnami/postgresql \
-       --set auth.username=telecom_user \
-       --set auth.password=telecom_secure_pass \
-       --set auth.database=telecom_db
+#### 2. Deploy Database & Observability Stack via Helm:
+```bash
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
 
-   # 2. Install Prometheus & Grafana stack
-   helm install telecom-prom prometheus-community/kube-prometheus-stack
+# 1. Install PostgreSQL in the cluster
+helm install telecom-pg bitnami/postgresql \
+    --set auth.username=telecom_user \
+    --set auth.password=telecom_secure_pass \
+    --set auth.database=telecom_db
 
-   # 3. Install Grafana Loki log aggregator
-   helm install telecom-loki grafana/loki-stack
-   ```
+# 2. Install Prometheus & Grafana stack
+helm install telecom-prom prometheus-community/kube-prometheus-stack
+
+# 3. Install Grafana Loki log aggregator
+helm install telecom-loki grafana/loki-stack
+```
+
+#### 3. Create Secrets & Deploy Application Workloads:
+```bash
+# 1. Create Kubernetes Secret with credentials
+kubectl create secret generic telecom-secrets \
+    --from-literal=mcp-token="telecom-mcp-secret-token-change-in-prod-xyz987" \
+    --from-literal=database-url="postgresql+asyncpg://telecom_user:telecom_secure_pass@telecom-pg-postgresql.default.svc.cluster.local:5432/telecom_db"
+
+# 2. Update image in deployment manifest to your Artifact Registry tag and apply
+IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest"
+sed -i "s|image: telecom-hybrid-ai:latest|image: ${IMAGE_PATH}|g" deploy/k8s/deployment.yaml
+
+kubectl apply -f deploy/k8s/deployment.yaml
+```
+
+#### 4. Access Services on GKE:
+```bash
+# Check status of pods and external load balancer service:
+kubectl get pods
+kubectl get svc telecom-crm-service
+
+# Forward Grafana port to view dashboards locally:
+kubectl port-forward svc/telecom-prom-grafana 3000:80
+```
 
 ---
 
