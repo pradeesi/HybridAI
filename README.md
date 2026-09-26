@@ -1,23 +1,25 @@
 <!--
   Purpose: Primary documentation, architectural specification, local execution instructions, and cloud/on-prem deployment playbooks for the Telecom Customer Care Hybrid AI Platform.
-  Architecture/Context: Central guide for developers, AI engineers, and operators deploying the FastMCP server, CRM agent console, and observability stack.
-  Dependencies/Side Effects: Governs environment configuration and containerized deployment across edge hypervisors and public clouds.
+  Architecture/Context: Central guide for developers, AI engineers, and operators deploying the FastMCP server, CRM agent console, and observability stack across any environment.
+  Dependencies/Side Effects: Governs environment configuration and multi-target deployment (Bare-Metal Python, Docker Compose, Cloud Run, GKE).
 -->
 
 # Telecom Customer Care Hybrid AI Platform & Secure FastMCP Server
 
-An enterprise-grade, containerized Telecom Customer Care intelligence platform. Replicates modern telecommunications frontline operations (Home Broadband, Mobile 5G, Billing, Line Diagnostics, and Upsell Offers) and exposes a hardened **FastMCP (Server-Sent Events)** server consumed by the **Google Gemini Enterprise App (GE App)** to assist human call center agents in real time while minimizing Average Handle Time (AHT).
+An enterprise-grade, containerized Telecom Customer Care platform replicating real-world telecommunications frontline operations (Home Broadband, Mobile 5G, Billing Disputes, Line Diagnostics, and Proactive Upselling). 
 
-Built with **Python 3.11+ (FastAPI)**, **Jinja2**, **HTML5**, **locally stored Bootstrap 5** (zero external CDN dependencies), **PostgreSQL 16**, and an observability suite powered by **Prometheus**, **Grafana Loki**, and **Grafana**.
+Exposes a hardened **FastMCP (Server-Sent Events)** server consumed by the **Google Gemini Enterprise App (GE App)** to assist human call center agents in real time while minimizing Average Handle Time (AHT).
+
+Built with **Python 3.11+ (FastAPI)**, **Jinja2**, **HTML5**, **locally stored Bootstrap 5** (zero external CDN dependencies), **PostgreSQL 16** (with automatic local SQLite fallback), and a full observability suite (**Prometheus**, **Grafana Loki**, and **Grafana**).
 
 ---
 
 ## 1. Application Architecture
 
-The platform is designed around a **Dual-Pane Agent Workflow**:
+The platform supports a synchronized **Dual-Pane Agent Workflow**:
 
-1. **Telecom CRM Agent Console**: A desktop web interface displaying subscriber 360 profiles, live equipment telemetry (optical Rx power dBm, Wi-Fi congestion, packet loss), billing history, and one-click remote diagnostic triggers.
-2. **Google Gemini Enterprise App (Copilot)**: Interacts seamlessly with the **FastMCP Server** over an encrypted SSE connection. It queries subscriber diagnostics, checks area outages, computes personalized upgrade pitches, and analyzes billing disputes.
+1. **Telecom CRM Agent Console**: Frontline desktop web interface displaying subscriber 360 profiles, live equipment telemetry (optical Rx power dBm, Wi-Fi interference, packet loss), billing history, and one-click remote diagnostic triggers.
+2. **Google Gemini Enterprise App (Copilot)**: Interacts with the **FastMCP Server** over an encrypted SSE connection. It queries subscriber diagnostics, checks area outages, computes personalized upgrade pitches, and analyzes billing disputes.
 
 ```mermaid
 graph TD
@@ -36,7 +38,7 @@ graph TD
         end
 
         subgraph DataTier["Persistence Tier"]
-            PG[(PostgreSQL 16 Telecom Relational DB)]
+            PG[(PostgreSQL 16 Telecom Relational DB / SQLite Fallback)]
         end
 
         subgraph TelemetryTier["Observability & Compliance Tier"]
@@ -65,10 +67,10 @@ graph TD
 
 ### Architectural & Security Pillars
 - **Zero-Trust Token Authentication**: All incoming MCP SSE streams and tool executions must present an `Authorization: Bearer <MCP_AUTH_TOKEN>` header.
-- **Dynamic PII Masking & Sanitization**: Phone numbers, Social Security Numbers, physical addresses, and payment card numbers are automatically redacted before LLM context ingestion.
+- **Dynamic PII Masking & PCI Compliance**: Phone numbers, Social Security Numbers, physical addresses, and payment card numbers are automatically redacted before LLM context ingestion.
 - **Immutable Audit Logging**: Every tool call (caller identity, tool parameters, accessed customer IDs, execution latency, and security status) is streamed to Grafana Loki.
 - **Air-Gapped / Zero CDN Dependency**: Bootstrap 5 CSS, Bootstrap Icons, and JavaScript are vendored locally in `src/crm/static/` to ensure zero third-party tracking or CDN outages.
-- **Universal Portability**: 100% containerized (OCI/Docker) with environment-driven configuration—deployable interchangeably on on-premise bare-metal hypervisors (Proxmox/x86 host) or Google Cloud (Cloud Run / GKE).
+- **Universal Portability**: 100% environment-driven configuration—deployable with zero changes across standalone Python environments, local Docker, on-prem bare-metal hypervisors, and Google Cloud.
 
 ---
 
@@ -131,7 +133,7 @@ HybridAI/
 - **API & Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) (High-performance ASGI)
 - **Data Persistence**: [SQLAlchemy 2.0 Async](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [aiosqlite](https://github.com/omnilib/aiosqlite)
 - **Protocol**: FastMCP Server implementing [Model Context Protocol](https://modelcontextprotocol.io/) via Server-Sent Events (SSE)
-- **Frontend & Styling**: Jinja2 HTML5 + Bootstrap 5.3.3 + Bootstrap Icons 1.11.3 (stored locally)
+- **Frontend & Styling**: Jinja2 HTML5 + Bootstrap 5.3.3 + Bootstrap Icons 1.11.3 (100% offline, locally stored)
 - **Observability**: [Prometheus Client](https://github.com/prometheus/client_python), [Grafana Loki](https://grafana.com/oss/loki/), and [Grafana](https://grafana.com/)
 - **Data Validation & Security**: Pydantic v2 Settings, Cryptography, Secrets
 
@@ -147,12 +149,12 @@ All settings are externalized and dynamically loaded from the environment or `.e
 | `LOG_LEVEL` | `string` | No | `INFO` | Logging threshold (`DEBUG`, `INFO`, `WARN`, `ERROR`) | `INFO` |
 | `CRM_PORT` | `integer` | No | `8000` | HTTP port for the Customer Care CRM Console | `8000` |
 | `MCP_PORT` | `integer` | No | `8001` | HTTP & SSE port for the FastMCP Server | `8001` |
-| `MCP_AUTH_TOKEN` | `string` | **Yes** | None (set in `.env`) | Secret Bearer token required by Gemini Enterprise App | `telecom-sec-xyz-987` |
-| `DATABASE_URL` | `string` | No | Auto-configured in Compose | Asynchronous database connection string (PostgreSQL or SQLite) | `postgresql+asyncpg://user:pass@host:5432/db` |
+| `MCP_AUTH_TOKEN` | `string` | **Yes** | `telecom-mcp-secret-token-change-in-prod-xyz987` | Secret Bearer token required by Gemini Enterprise App | `telecom-sec-xyz-987` |
+| `DATABASE_URL` | `string` | No | Auto-detected | Database connection string (PostgreSQL or automatic SQLite fallback) | `postgresql+asyncpg://user:pass@host:5432/db` |
 | `POSTGRES_USER` | `string` | No | `telecom_user` | PostgreSQL superuser username | `telecom_user` |
 | `POSTGRES_PASSWORD` | `string` | **Yes** | `telecom_secure_pass` | PostgreSQL superuser password | `SuperSecretPass123!` |
 | `POSTGRES_DB` | `string` | No | `telecom_db` | Primary database name | `telecom_db` |
-| `LOKI_URL` | `string` | No | `http://loki:3100` | HTTP push endpoint for Grafana Loki log ingestion | `http://localhost:3100` |
+| `LOKI_URL` | `string` | No | `http://localhost:3100` | HTTP push endpoint for Grafana Loki log ingestion | `http://localhost:3100` |
 | `GRAFANA_ADMIN_USER` | `string` | No | `admin` | Initial administrator username for Grafana | `admin` |
 | `GRAFANA_ADMIN_PASSWORD` | `string` | **Yes** | `telecom_admin` | Initial administrator password for Grafana | `GrafanaPass456!` |
 
@@ -165,116 +167,129 @@ All settings are externalized and dynamically loaded from the environment or `.e
 
 ---
 
-## 6. Local Execution Instructions
+## 6. Execution Playbooks by Environment
 
-### Prerequisites
-- Python 3.11+
-- Git
+Choose the playbook that fits your target environment:
 
-### Quickstart (Standalone Mode with SQLite Fallback)
+### Playbook A: Local Workstation / Laptop (Standalone Python, No Docker Required)
 
-1. **Clone the repository and enter directory:**
+*Ideal for development, demonstration, or testing when Docker is not installed on your machine. Automatically uses the high-performance asynchronous SQLite database engine and seeds synthetic telecom records instantly.*
+
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/pradeesi/HybridAI.git
    cd HybridAI
    ```
 
-2. **Configure environment variables:**
+2. **Initialize Environment Variables:**
    ```bash
    cp .env.example .env
-   # Edit .env to set your desired MCP_AUTH_TOKEN and passwords
    ```
 
-3. **Set up virtual environment and install dependencies:**
+3. **Set Up Python Virtual Environment:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
-4. **Run the automated test suite:**
+4. **Verify System with Automated Tests:**
    ```bash
    python3 -m unittest discover tests/
    ```
 
-5. **Start the FastMCP Server (Terminal 1):**
+5. **Start FastMCP Server (Terminal 1):**
    ```bash
+   source .venv/bin/activate
    python3 -m src.mcp.server
-   # FastMCP Server listening on http://localhost:8001
    ```
+   *FastMCP Server is live on `http://localhost:8001` (SSE: `http://localhost:8001/sse`).*
 
-6. **Start the CRM Agent Console (Terminal 2):**
+6. **Start CRM Agent Console (Terminal 2):**
    ```bash
+   source .venv/bin/activate
    python3 -m src.crm.app
-   # CRM Agent Console listening on http://localhost:8000
    ```
+   *CRM Agent Console is live on `http://localhost:8000`.*
 
 ---
 
-## 7. Home Lab & On-Prem Deployment Playbook (Docker Compose)
+### Playbook B: Home Lab & Bare-Metal Edge Server (Docker Compose)
 
-For bare-metal hypervisors (Proxmox LXC container or VM on an x86 host) or dedicated edge hardware:
+*Ideal for self-hosted production in a home lab (e.g. Proxmox LXC container or VM on an x86 host) with complete observability (PostgreSQL, FastMCP, CRM, Prometheus, Loki, Grafana).*
 
-1. **Provision Host Environment**:
-   - Assign 4 vCPUs, 8 GB RAM, and 30 GB storage to an Ubuntu 22.04 or Debian 12 LXC / VM.
-   - Install Docker Engine and the Docker Compose plugin.
+1. **Prerequisites on Host**:
+   - Ubuntu 22.04 / Debian 12 (or any Linux distribution) with Docker & Docker Compose plugin installed.
+   - Recommended specs: 4 vCPUs, 8 GB RAM, 30 GB disk.
 
-2. **Configure Secure Remote Mesh Network (Tailscale / WireGuard)**:
+2. **(Recommended) Mesh VPN Configuration (Tailscale / WireGuard)**:
+   *Gives the box a private, encrypted IP address accessible anywhere without opening firewall ports on your home router.*
    ```bash
-   # Connect the host to your private mesh VPN
    curl -fsSL https://tailscale.com/install.sh | sh
    sudo tailscale up
-   # Note the internal Tailscale IP: tailscale ip -4 (e.g. 100.x.y.z)
+   # Retrieve your private node IP:
+   tailscale ip -4
    ```
 
-3. **Deploy the Complete Container Stack**:
+3. **Deploy the Complete Container Stack:**
    ```bash
    cd HybridAI
    cp .env.example .env
+   # Edit .env to set your production MCP_AUTH_TOKEN and passwords
    docker compose up -d --build
    ```
 
-4. **Verify Container Health**:
+4. **Verify All Containers are Healthy:**
    ```bash
    docker compose ps
    ```
 
-5. **Access Application & Observability Endpoints**:
-   - **Telecom CRM Agent Console**: `http://<host-or-vpn-ip>:8000`
-   - **FastMCP SSE Endpoint**: `http://<host-or-vpn-ip>:8001/sse`
-   - **Grafana Dashboards**: `http://<host-or-vpn-ip>:3000` (User: `admin` / Password from `.env`)
-   - **Prometheus UI**: `http://<host-or-vpn-ip>:9090`
-   - **Loki Push API**: `http://<host-or-vpn-ip>:3100`
+5. **Access Application & Observability Endpoints:**
+   - **CRM Frontline Console**: `http://<tailscale-ip-or-host>:8000`
+   - **FastMCP Server (SSE)**: `http://<tailscale-ip-or-host>:8001/sse`
+   - **Grafana Security & Ops Dashboards**: `http://<tailscale-ip-or-host>:3000` (User: `admin` / Password: value from `.env`)
+   - **Prometheus Metrics**: `http://<tailscale-ip-or-host>:9090`
+   - **Loki Log API**: `http://<tailscale-ip-or-host>:3100`
+
+6. **Managing the Stack:**
+   ```bash
+   # View unified live logs:
+   docker compose logs -f mcp-server crm-app
+   
+   # Stop the stack:
+   docker compose down
+   ```
 
 ---
 
-## 8. Cloud Deployment Playbooks
+### Playbook C: Google Cloud Run (Serverless Deployment)
 
-### Google Cloud Run
+*Ideal for cloud-hosted scalability without managing VMs. Deploys the FastMCP server and CRM web console to managed containers on Google Cloud.*
 
-Google Cloud Run provides serverless, auto-scaling execution for containerized workloads.
-
-1. **Authenticate and set Google Cloud project:**
+1. **Configure Google Cloud Project & Artifact Registry:**
    ```bash
-   gcloud auth login
+   export PROJECT_ID="your-gcp-project-id"
+   export REGION="us-central1"
+   
    gcloud config set project ${PROJECT_ID}
-   ```
-
-2. **Build and push image to Google Artifact Registry:**
-   ```bash
+   
    gcloud artifacts repositories create hybrid-ai-repo \
        --repository-format=docker \
-       --location=us-central1
+       --location=${REGION} \
+       --description="Telecom HybridAI Repository"
+   ```
 
-   gcloud builds submit --tag us-central1-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
+2. **Build and Push the Container Image:**
+   ```bash
+   gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
    ```
 
 3. **Deploy FastMCP Server to Cloud Run:**
    ```bash
    gcloud run deploy telecom-mcp-server \
-       --image us-central1-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+       --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
        --platform managed \
-       --region us-central1 \
+       --region ${REGION} \
        --command "python3,-m,src.mcp.server" \
        --port 8001 \
        --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN} \
@@ -284,81 +299,73 @@ Google Cloud Run provides serverless, auto-scaling execution for containerized w
 4. **Deploy CRM Agent Console to Cloud Run:**
    ```bash
    gcloud run deploy telecom-crm-console \
-       --image us-central1-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+       --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
        --platform managed \
-       --region us-central1 \
+       --region ${REGION} \
        --command "python3,-m,src.crm.app" \
        --port 8000 \
        --set-env-vars APP_ENV=production,CRM_PORT=8000,MCP_PORT=8001 \
        --allow-unauthenticated
    ```
 
-### Google Kubernetes Engine (GKE)
+---
 
-For orchestrating resilient enterprise clusters with internal ingress:
+### Playbook D: Google Kubernetes Engine (GKE)
 
-1. **Connect to GKE Cluster:**
+*Ideal for enterprise Kubernetes clusters.*
+
+1. **Connect to Your Cluster:**
    ```bash
    gcloud container clusters get-credentials ${CLUSTER_NAME} --region ${REGION} --project ${PROJECT_ID}
    ```
 
-2. **Create Secret for Authentication Tokens:**
+2. **Create Required Secrets:**
    ```bash
    kubectl create secret generic telecom-secrets \
        --from-literal=mcp-token="${MCP_AUTH_TOKEN}" \
        --from-literal=pg-password="${POSTGRES_PASSWORD}"
    ```
 
-3. **Apply Kubernetes Deployment Manifest:**
-   ```yaml
-   # deploy/k8s-hybrid-ai.yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: telecom-mcp-server
-     labels:
-       app: telecom-mcp
-   spec:
-     replicas: 2
-     selector:
-       matchLabels:
-         app: telecom-mcp
-     template:
-       metadata:
-         labels:
-           app: telecom-mcp
-       spec:
-         containers:
-         - name: mcp-server
-           image: us-central1-docker.pkg.dev/PROJECT_ID/hybrid-ai-repo/hybrid-ai:latest
-           command: ["python3", "-m", "src.mcp.server"]
-           ports:
-           - containerPort: 8001
-           env:
-           - name: MCP_AUTH_TOKEN
-             valueFrom:
-               secretKeyRef:
-                 name: telecom-secrets
-                 key: mcp-token
-           resources:
-             requests:
-               memory: "256Mi"
-               cpu: "250m"
-             limits:
-               memory: "512Mi"
-               cpu: "500m"
-   ```
-
-4. **Deploy to cluster:**
+3. **Deploy Workload:**
    ```bash
-   kubectl apply -f deploy/k8s-hybrid-ai.yaml
+   kubectl apply -f deploy/k8s/
    ```
 
 ---
 
-## 9. Gemini Enterprise App Integration Guide
+## 7. Service Verification & Health Checks
 
-To connect **Google Gemini Enterprise App** to this FastMCP server:
+Once the services are running, verify each endpoint:
+
+| Endpoint | Method | Expected Output | Purpose |
+| :--- | :--- | :--- | :--- |
+| `http://localhost:8000/` | `GET` | HTML Dashboard | Frontline Agent Console & Customer Queue |
+| `http://localhost:8000/health` | `GET` | `{"status":"healthy"}` | CRM Container Liveness Probe |
+| `http://localhost:8001/health` | `GET` | `{"status":"healthy"}` | FastMCP Server Liveness Probe |
+| `http://localhost:8001/metrics` | `GET` | Prometheus formatted text | Tool invocations & PII redaction counters |
+| `http://localhost:8001/tools` | `GET` *(with Bearer token)* | JSON tool catalog | 8 telecom tool schemas |
+| `http://localhost:8001/sse` | `GET` *(with Bearer token)* | `text/event-stream` | Live MCP Event Stream for Gemini Enterprise |
+
+### Quick CLI Verification Script:
+```bash
+# 1. Test MCP health
+curl -s http://localhost:8001/health
+
+# 2. Test authenticated tool listing
+curl -s -H "Authorization: Bearer telecom-mcp-secret-token-change-in-prod-xyz987" http://localhost:8001/tools
+
+# 3. Test customer search tool via direct API
+curl -s -X POST http://localhost:8001/execute \
+  -H "Authorization: Bearer telecom-mcp-secret-token-change-in-prod-xyz987" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "search_customer", "arguments": {"query": "Elena"}}'
+```
+
+---
+
+## 8. Gemini Enterprise App Integration Guide
+
+To connect the **Google Gemini Enterprise App** to this FastMCP server:
 
 1. In the Gemini Enterprise App Admin / Settings Console, navigate to **Agent Tools / External MCP Servers**.
 2. Add a new **MCP SSE Server**:
@@ -377,3 +384,9 @@ To connect **Google Gemini Enterprise App** to this FastMCP server:
    - `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes.
    - `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
    - `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
+
+### Sample Prompts for Human Call Center Agent with GE App:
+- *"Elena Rostova is calling about frequent buffering and slow Wi-Fi. Check her line diagnostics and run any necessary remote action."*
+- *"Marcus Vance says his mobile internet is suddenly crawling. Check his 5G subscription and tell me what plan booster we can pitch to fix it."*
+- *"Amina Al-Mansoor is disputing a roaming charge from London. What charges were billed and what travel pass should I offer her?"*
+- *"David Chen is happy with his service. Does his usage pattern qualify him for a fiber speed tier upgrade?"*
