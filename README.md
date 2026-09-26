@@ -347,13 +347,17 @@ echo "Cloud SQL Connection Name: ${INSTANCE_CONNECTION_NAME}"
 
 #### 3. Build & Push Image to Google Artifact Registry:
 ```bash
-# 1. Create Docker repository in Artifact Registry
+# 1. Create Docker repository in Artifact Registry (skip if already created)
 gcloud artifacts repositories create hybrid-ai-repo \
     --repository-format=docker \
     --location=${REGION} \
-    --description="Telecom HybridAI Repository"
+    --description="Telecom HybridAI Repository" 2>/dev/null || true
 
-# 2. Build and submit container image via Cloud Build
+# 2. Clone repository in Cloud Shell and navigate into the project folder:
+git clone https://github.com/pradeesi/HybridAI.git
+cd HybridAI
+
+# 3. Build and submit container image via Cloud Build (must be run from inside HybridAI folder)
 gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
 ```
 
