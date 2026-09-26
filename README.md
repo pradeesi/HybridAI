@@ -312,7 +312,7 @@ Choose the playbook that fits your target environment:
 
 *Ideal for cloud-hosted scalability without managing VMs. Fully serverless execution where Google Cloud handles TLS certificates, auto-scaling, and health monitoring.*
 
-#### 1. Enable Required Google Cloud APIs:
+#### 1. Enable Required Google Cloud APIs & Configure Build Permissions:
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
@@ -324,6 +324,21 @@ gcloud services enable run.googleapis.com \
                        cloudbuild.googleapis.com \
                        sqladmin.googleapis.com \
                        secretmanager.googleapis.com
+
+# Retrieve project number and grant Cloud Build runner permissions to read storage and push images:
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/storage.objectViewer"
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/artifactregistry.writer"
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/logging.logWriter"
 ```
 
 #### 2. Provision Managed Database (Google Cloud SQL for PostgreSQL):
