@@ -395,8 +395,7 @@ gcloud run deploy telecom-mcp-server \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
     --platform managed \
     --region ${REGION} \
-    --command "python3" \
-    --args "-m,src.mcp.server" \
+    --command="python3,-m,src.mcp.server" \
     --port 8001 \
     --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987" \
     --allow-unauthenticated
@@ -408,8 +407,7 @@ gcloud run deploy telecom-mcp-server \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
     --platform managed \
     --region ${REGION} \
-    --command "python3" \
-    --args "-m,src.mcp.server" \
+    --command="python3,-m,src.mcp.server" \
     --port 8001 \
     --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
     --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
