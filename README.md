@@ -636,35 +636,59 @@ For clients supporting SSE transport:
 
 ### Comprehensive Test Prompts for Gemini Enterprise Chat:
 
-Below are production-ready prompt scenarios mapped to the pre-seeded synthetic personas. Use these in Gemini Enterprise chat to test automated tool selection, reasoning, and end-to-end customer care workflows:
+> [!NOTE]
+> **Customer Disambiguation & Identity Verification**:
+> In enterprise telecom environments, multiple subscribers often share identical names (e.g. multiple "David Chen"s). The `search_customer` tool is designed to support both natural-language disambiguation and unique identifier lookups:
+> - **Multi-Match Handling**: If a name search returns multiple matches, the tool returns all candidate records with masked PII (`phone_masked`, `postal_code`, `accounts`). Gemini Enterprise will present the candidates to the call center agent to confirm the caller's identity.
+> - **Direct Disambiguated Search**: Prompts can specify the **Account Number**, **Phone Number**, or **Billing Postal Code** for 100% deterministic lookup.
+
+#### Synthetic Persona Reference Card for Call Center Testing:
+| Subscriber Name | Account Number | Phone Number | Postal Code | Scenario Trigger |
+| :--- | :--- | :--- | :--- | :--- |
+| **Elena Rostova** | `TEL-ACC-88129` | `+1 (555) 234-5678` | `97477` | Optical line attenuation (-28.5 dBm) & ONT reboot |
+| **Marcus Vance** | `TEL-ACC-99214` | `+1 (555) 987-1234` | `94102` | Throttled 5G line (cap exceeded) & upsell pitch |
+| **Amina Al-Mansoor** | `TEL-ACC-44910` | `+1 (555) 678-4321` | `10017` | Unexpected international roaming dispute ($85 fee) |
+| **David Chen** | `TEL-ACC-11029` | `+1 (555) 312-7890` | `77092` | High bandwidth usage qualifying for 1Gbps Fiber boost |
+
+---
 
 #### Scenario 1: Customer 360 Lookup & Deep Diagnostics (Elena Rostova)
-> *"Elena Rostova is on the line experiencing slow broadband speeds and intermittent buffering. Can you look up her customer profile, check her line diagnostics, and recommend a resolution?"*
+* **Natural Language**:
+  > *"Elena Rostova is on the line experiencing slow broadband speeds and intermittent buffering. Can you look up her customer profile, check her line diagnostics, and recommend a resolution?"*
+* **Disambiguated (Account / Phone)**:
+  > *"Customer Elena Rostova with account number TEL-ACC-88129 (phone ending in 5678) is reporting buffering. Pull her line diagnostics and check device health."*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_customer_360` &rarr; `get_service_diagnostics`
-- **Expected Outcome**: Identifies ONT hardware `ONT-HW-99281-FBR`, notes optical signal degradation (-28.4 dBm) and packet loss (3.8%), and recommends a remote ONT reboot or technician check. All sensitive PII (phone, SSN, address) remains masked.
+- **Expected Outcome**: Identifies ONT hardware `ONT-HW-99281-FBR`, notes optical signal degradation (-28.5 dBm) and packet loss (14.2%), and recommends a remote ONT reboot or technician dispatch. All sensitive PII (phone, SSN, address) remains masked.
 
 #### Scenario 2: Remote Hardware Remediation (Reboot ONT Terminal)
-> *"Run a remote reboot on Elena's ONT optical terminal to restore her line levels."*
+* **Prompt**:
+  > *"Run a remote reboot on Elena Rostova's ONT optical terminal (account TEL-ACC-88129) to restore her optical levels."*
 - **Tool Invoked Automatically**: `run_remote_device_action` (`device_id="5789bc85-d391-4b49-8893-337136c3faba"`, `action="reboot"`)
 - **Expected Outcome**: Triggers remote device reboot, sets status to `HEALTHY`, logs security audit event with caller identity, and returns confirmation.
 
 #### Scenario 3: Throttled 5G Plan & Upsell Offer (Marcus Vance)
-> *"Marcus Vance is asking why his 5G mobile data has slowed to a crawl. Check his mobile usage and give me an upgrade offer I can pitch to him."*
+* **Natural Language**:
+  > *"Marcus Vance is asking why his 5G mobile data has slowed to a crawl. Check his mobile usage and give me an upgrade offer I can pitch to him."*
+* **Disambiguated (Account Number)**:
+  > *"Subscriber Marcus Vance on account TEL-ACC-99214 says his data speed is capped. Check his current usage against his plan threshold and compute an upsell offer."*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_service_diagnostics` &rarr; `get_upsell_recommendations`
-- **Expected Outcome**: Detects throttled mobile line (50 GB cap exceeded on 5G Pro), retrieves the `Unlimited 5G Data Pass` upgrade offer with pricing, and generates an empathetic agent pitch script.
+- **Expected Outcome**: Detects throttled mobile line (54.8 GB used against 50 GB cap on 5G Essentials), retrieves the `Unlimited 5G Priority Data Pass` offer with pricing, and generates an empathetic agent pitch script.
 
 #### Scenario 4: Billing Dispute & Roaming Audit (Amina Al-Mansoor)
-> *"Amina Al-Mansoor is disputing an unexpected international roaming charge on her recent invoice. What charges were billed and what travel pass should she have used?"*
+* **Prompt**:
+  > *"Amina Al-Mansoor (account TEL-ACC-44910) is disputing an unexpected international roaming charge on her recent invoice. What charges were billed and what travel pass should she have used?"*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_billing_breakdown`
-- **Expected Outcome**: Analyzes invoice line items, isolates $85 roaming data fee from London Heathrow, and suggests applying a one-time courtesy credit along with activating the Global Roaming Add-on ($15/mo). Card details are PCI-DSS masked.
+- **Expected Outcome**: Analyzes invoice line items, isolates $85 roaming data fee from London Heathrow, and suggests applying a one-time courtesy credit along with activating the Global Roaming Add-on ($25/mo). Card details are PCI-DSS masked.
 
 #### Scenario 5: Infrastructure & Area Outage Detection
-> *"David Chen is reporting internet connectivity issues in the 98101 postal code area. Are there any active fiber cuts or cell tower maintenance impacting his location?"*
+* **Prompt**:
+  > *"Subscriber David Chen (postal code 98101 / 77092) is reporting internet connectivity drops. Are there any active fiber cuts or cell tower maintenance impacting his area?"*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `check_network_outages`
-- **Expected Outcome**: Returns active fiber maintenance in Seattle Downtown (98101) with estimated repair time, advising the agent to reassure the customer without dispatching an unnecessary truck roll.
+- **Expected Outcome**: Returns active fiber maintenance in Pacific Northwest Metro (98101) with estimated repair time, advising the agent to reassure the customer without dispatching an unnecessary truck roll.
 
 #### Scenario 6: Call Interaction Logging & CRM Record
-> *"Log this interaction for Elena Rostova: We diagnosed optical signal degradation, executed a remote reboot on her ONT terminal, confirmed line levels stabilized, and offered a Gigabit upgrade pitch. Call duration 240 seconds."*
+* **Prompt**:
+  > *"Log this interaction for Elena Rostova (account TEL-ACC-88129): We diagnosed optical signal degradation, executed a remote reboot on her ONT terminal, confirmed line levels stabilized, and offered a Gigabit upgrade pitch. Call duration 240 seconds."*
 - **Tool Invoked Automatically**: `log_agent_interaction` (`customer_id=...`, `issue_summary=...`, `resolution_summary=...`, `upsell_offered=True`)
 - **Expected Outcome**: Persists structured call record into the database, updates CRM dashboard, and records audit trail entry.
 

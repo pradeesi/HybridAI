@@ -62,7 +62,8 @@ async def search_customer_tool(query: str, caller_id: str = "gemini-enterprise")
                         Customer.first_name.ilike(clean_q),
                         Customer.last_name.ilike(clean_q),
                         Customer.email.ilike(clean_q),
-                        Customer.phone_number.ilike(clean_q)
+                        Customer.phone_number.ilike(clean_q),
+                        Customer.accounts.any(Account.account_number.ilike(clean_q))
                     )
                 )
             )

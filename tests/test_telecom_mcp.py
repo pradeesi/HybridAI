@@ -78,6 +78,18 @@ class TestMCPToolsAndDatabase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Elena", first_match["full_name"])
         self.assertIn("***", first_match["phone_masked"])
 
+        # Test disambiguation by Account Number
+        acc_res = await search_customer_tool(query="TEL-ACC-88129", caller_id="test-agent")
+        self.assertEqual(acc_res["status"], "success")
+        self.assertEqual(acc_res["count"], 1)
+        self.assertIn("Elena", acc_res["customers"][0]["full_name"])
+
+        # Test disambiguation by Phone Number
+        phone_res = await search_customer_tool(query="5552345678", caller_id="test-agent")
+        self.assertEqual(phone_res["status"], "success")
+        self.assertEqual(phone_res["count"], 1)
+        self.assertIn("Elena", phone_res["customers"][0]["full_name"])
+
     async def test_customer_360_and_diagnostics(self):
         # Find Elena Rostova
         search = await search_customer_tool(query="Rostova")
