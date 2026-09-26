@@ -1,42 +1,145 @@
 # Purpose: Defines file and directory patterns ignored by Git version control for HybridAI.
 # Architecture/Context: Root-level configuration for repository security and hygiene.
-# Dependencies/Side Effects: Prevents accidental commit of credentials, secrets, dependencies, and OS metadata.
+# Dependencies/Side Effects: Prevents accidental commit of credentials, secrets, database dumps, logs, and OS metadata.
 
-# Secrets Protection
+# -----------------------------------------------------------------------------
+# 1. SECRETS, CREDENTIALS & SENSITIVE CONFIGURATION
+# -----------------------------------------------------------------------------
 .env
 .env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
+
+# Certificates, Keys & Secrets
 *.pem
 *.key
 *.cert
 *.crt
+*.pfx
+*.p12
+*.csr
 *credentials*.json
 *service_account*.json
 client_secret*.json
+*.token
 
-# Dependencies & Virtual Environments
-node_modules/
-venv/
-.venv/
-env/
+# VPN / Tunnel configurations
+*.ovpn
+wireguard/*.conf
+
+# -----------------------------------------------------------------------------
+# 2. LOCAL DATABASES & STORAGE VOLUMES
+# -----------------------------------------------------------------------------
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+telecom_local.db
+test_telecom.db
+
+# Docker / Service runtime volumes
+pg_data/
+loki_data/
+prometheus_data/
+grafana_data/
+data/
+
+# -----------------------------------------------------------------------------
+# 3. PYTHON RUNTIME, VIRTUAL ENVIRONMENTS & COMPILED CODE
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
-target/
-vendor/
+*.so
 
-# Build & Compilation Outputs
-dist/
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution, Packaging & Builds
 build/
-out/
-*.egg-info/
+develop-eggs/
+dist/
+downloads/
+eggs/
 .eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# IDE & OS Noise
+# -----------------------------------------------------------------------------
+# 4. TESTING, COVERAGE & STATIC ANALYSIS CACHES
+# -----------------------------------------------------------------------------
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# -----------------------------------------------------------------------------
+# 5. LOGGING & PROCESS ARTIFACTS
+# -----------------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.pid
+*.seed
+*.pid.lock
+
+# -----------------------------------------------------------------------------
+# 6. NODE / FRONTEND DEPENDENCIES
+# -----------------------------------------------------------------------------
+node_modules/
+jspm_packages/
+.pnp
+.pnp.js
+
+# -----------------------------------------------------------------------------
+# 7. OPERATING SYSTEM & IDE NOISE
+# -----------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
+
+# IDEs & Text Editors
 .idea/
 .vscode/
 *.swp
 *.swo
+*.swn
 *~
+*.sublime-workspace
+*.sublime-project
