@@ -251,7 +251,107 @@ async def execute_tool(request: Request, auth: str = Depends(verify_auth_token))
     return {"result": result}
 
 
+async def _process_single_mcp_message(payload: Dict[str, Any], caller_id: str = "gemini-enterprise-mcp") -> Optional[Dict[str, Any]]:
+    """
+    Summary:
+        Processes a single JSON-RPC 2.0 MCP message according to the Model Context Protocol.
+
+    Parameters:
+        payload (Dict[str, Any]): Parsed JSON-RPC request dictionary.
+        caller_id (str): Identifier of the caller for audit logging.
+
+    Return Value:
+        Optional[Dict[str, Any]]: JSON-RPC response object or None for notifications.
+    """
+    msg_id = payload.get("id")
+    method = payload.get("method")
+    params = payload.get("params", {}) or {}
+
+    # 1. MCP Lifecycle: initialize
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {"listChanged": False}
+                },
+                "serverInfo": {
+                    "name": "telecom-mcp-server",
+                    "version": "1.0.0"
+                }
+            }
+        }
+
+    # 2. MCP Lifecycle: notifications/initialized
+    elif method == "notifications/initialized":
+        if msg_id is not None:
+            return {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+        return None
+
+    # 3. MCP Ping
+    elif method == "ping":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {}
+        }
+
+    # 4. MCP Tools List
+    elif method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"tools": TOOL_DEFINITIONS}
+        }
+
+    # 5. MCP Tools Call
+    elif method == "tools/call":
+        tool_name = params.get("name")
+        tool_args = params.get("arguments", {}) or {}
+
+        if tool_name not in TOOL_HANDLER_MAP:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32601, "message": f"Method not found: {tool_name}"}
+            }
+
+        handler = TOOL_HANDLER_MAP[tool_name]
+        try:
+            tool_result = await handler(**tool_args, caller_id=caller_id)
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(tool_result, default=str)
+                        }
+                    ]
+                }
+            }
+        except Exception as err:
+            logger.error("Error executing tool %s: %s", tool_name, str(err), exc_info=True)
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32000, "message": f"Execution error: {str(err)}"}
+            }
+
+    # Fallback for unrecognized method
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {"code": -32601, "message": f"Method '{method}' is not supported."}
+    }
+
+
+@app.get("/mcp")
 @app.get("/sse")
+@app.get("/")
 async def mcp_sse_stream(
     request: Request,
     authorization: Optional[str] = Header(None),
@@ -259,21 +359,30 @@ async def mcp_sse_stream(
 ):
     """
     Summary:
-        Server-Sent Events (SSE) transport endpoint implementing MCP stream connectivity.
-        Authenticates incoming SSE requests and keeps a live persistent stream open.
+        Server-Sent Events (SSE) and HTTP discovery endpoint implementing MCP connectivity.
+        Supports streaming text/event-stream for SSE and direct JSON tool listing for HTTP callers.
     """
     if not (validate_token(x_mcp_token) or validate_bearer_token(authorization)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized MCP SSE connection.",
+            detail="Unauthorized MCP connection.",
             headers={"WWW-Authenticate": "Bearer"}
         )
+
+    accept_header = request.headers.get("accept", "")
+    if "text/event-stream" not in accept_header:
+        return {
+            "status": "healthy",
+            "service": "telecom-mcp-server",
+            "protocolVersion": "2024-11-05",
+            "tools": TOOL_DEFINITIONS
+        }
 
     async def event_generator():
         # Emit initial MCP handshake event with endpoint URI
         handshake_data = {
             "type": "endpoint",
-            "endpoint": "/messages"
+            "endpoint": "/mcp"
         }
         yield f"event: endpoint\ndata: {json.dumps(handshake_data)}\n\n"
 
@@ -295,55 +404,36 @@ async def mcp_sse_stream(
     )
 
 
+@app.post("/mcp")
 @app.post("/messages")
+@app.post("/")
 async def handle_mcp_message(request: Request, auth: str = Depends(verify_auth_token)):
     """
     Summary:
-        MCP JSON-RPC message endpoint. Dispatches tools/call or tools/list commands.
+        MCP JSON-RPC message endpoint. Dispatches initialize, ping, tools/list, or tools/call commands.
+        Handles both individual and batch JSON-RPC payloads from Gemini Enterprise or AI agents.
     """
-    payload = await request.json()
-    msg_id = payload.get("id")
-    method = payload.get("method")
-    params = payload.get("params", {})
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
 
-    if method == "tools/list":
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "result": {"tools": TOOL_DEFINITIONS}
-        }
+    if isinstance(payload, list):
+        responses = []
+        for item in payload:
+            if isinstance(item, dict):
+                res = await _process_single_mcp_message(item, caller_id="gemini-enterprise-mcp")
+                if res is not None:
+                    responses.append(res)
+        return responses
 
-    elif method == "tools/call":
-        tool_name = params.get("name")
-        tool_args = params.get("arguments", {})
+    elif isinstance(payload, dict):
+        res = await _process_single_mcp_message(payload, caller_id="gemini-enterprise-mcp")
+        if res is None:
+            return Response(status_code=204)
+        return res
 
-        if tool_name not in TOOL_HANDLER_MAP:
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {"code": -32601, "message": f"Method not found: {tool_name}"}
-            }
-
-        handler = TOOL_HANDLER_MAP[tool_name]
-        tool_result = await handler(**tool_args, caller_id="gemini-enterprise-sse")
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(tool_result)
-                    }
-                ]
-            }
-        }
-
-    return {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "error": {"code": -32600, "message": f"Invalid Request method: {method}"}
-    }
+    raise HTTPException(status_code=400, detail="Request body must be a JSON object or array.")
 
 
 def run():

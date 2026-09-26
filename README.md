@@ -592,25 +592,47 @@ curl -s -X POST http://localhost:8001/execute \
 
 ## 8. Gemini Enterprise App Integration Guide
 
-To connect the **Google Gemini Enterprise App** to this FastMCP server:
+To connect **Google Gemini Enterprise (GE)** to this FastMCP server:
 
-1. In the Gemini Enterprise App Admin / Settings Console, navigate to **Agent Tools / External MCP Servers**.
-2. Add a new **MCP SSE Server**:
-   - **Transport**: `Server-Sent Events (SSE)`
-   - **Server URL**: `http://<your-host-or-tailscale-ip>:8001/sse`
-   - **HTTP Headers**:
-     ```http
-     Authorization: Bearer <your-mcp-auth-token>
-     ```
-3. The following 8 tools will be discovered automatically:
-   - `search_customer`: Quick phone/name subscriber lookup.
-   - `get_customer_360`: Full profile with PII masked (address, SSN, phone).
-   - `get_service_diagnostics`: Real-time ONT optical dBm signal & 5G telemetry.
-   - `run_remote_device_action`: Reboot ONT or optimize Wi-Fi channels remotely.
-   - `check_network_outages`: Check for area fiber cuts or tower repairs by postal code.
-   - `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes.
-   - `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
-   - `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
+### Option A: Gemini Enterprise Custom MCP Data Store (StreamableHTTP)
+1. In the **Gemini Enterprise Admin Console**, navigate to **Data stores** > **+ New Data store**.
+2. Select **Custom MCP Server**:
+   - **Data store name**: `TE MCP`
+   - **Instance URL**: `https://telecom-mcp-server-<PROJECT_NUMBER>.<REGION>.run.app/mcp`
+   - **Authentication**: Leave as default (or Bearer Token if configured).
+3. **Grant Cloud Run Invoker to the Discovery Engine Service Agent**:
+   When deployed on Cloud Run with IAM access control (Domain Restricted Sharing), grant the Discovery Engine service agent access:
+   ```bash
+   PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
+
+   gcloud run services add-iam-policy-binding telecom-mcp-server \
+     --region=${REGION} \
+     --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
+     --role="roles/run.invoker"
+   ```
+4. **Reload & Enable Actions**:
+   - Navigate to the newly created data store > **Actions** tab.
+   - Click **Reload custom actions** to fetch the 8 tool definitions.
+   - Toggle the actions you want enabled in Gemini Enterprise to **Active / Enabled**.
+
+### Option B: SSE Endpoint Connection
+For clients supporting SSE transport:
+- **Transport**: `Server-Sent Events (SSE)`
+- **Server URL**: `https://telecom-mcp-server-<PROJECT_NUMBER>.<REGION>.run.app/sse`
+- **HTTP Headers**:
+  ```http
+  Authorization: Bearer <your-mcp-auth-token>
+  ```
+
+### Available Custom MCP Actions:
+- `search_customer`: Quick phone/name subscriber lookup with masked PII.
+- `get_customer_360`: Full profile with PII masked (address, SSN, phone).
+- `get_service_diagnostics`: Real-time ONT optical dBm signal & 5G telemetry.
+- `run_remote_device_action`: Reboot ONT or optimize Wi-Fi channels remotely.
+- `check_network_outages`: Check for area fiber cuts or tower repairs by postal code.
+- `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes.
+- `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
+- `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
 
 ### Sample Prompts for Human Call Center Agent with GE App:
 - *"Elena Rostova is calling about frequent buffering and slow Wi-Fi. Check her line diagnostics and run any necessary remote action."*

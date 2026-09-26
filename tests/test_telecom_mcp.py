@@ -121,5 +121,55 @@ class TestMCPToolsAndDatabase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Unlimited 5G", rec["title"])
 
 
+class TestMCPEndpoints(unittest.TestCase):
+    """
+    Summary:
+        Tests FastAPI HTTP and JSON-RPC endpoints for MCP specification compliance.
+    """
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        from src.mcp.server import app
+        self.client = TestClient(app)
+        self.auth_headers = {"Authorization": "Bearer test-secret-token-12345"}
+
+    def test_mcp_initialize(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05"}
+        }
+        res = self.client.post("/mcp", json=payload, headers=self.auth_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertEqual(data["id"], 1)
+        self.assertEqual(data["result"]["protocolVersion"], "2024-11-05")
+        self.assertEqual(data["result"]["serverInfo"]["name"], "telecom-mcp-server")
+
+    def test_mcp_tools_list(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        }
+        res = self.client.post("/mcp", json=payload, headers=self.auth_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("tools", data["result"])
+        tool_names = [t["name"] for t in data["result"]["tools"]]
+        self.assertIn("search_customer", tool_names)
+        self.assertIn("get_customer_360", tool_names)
+
+    def test_mcp_get_discovery(self):
+        res = self.client.get("/mcp", headers=self.auth_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "healthy")
+        self.assertIn("tools", data)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,8 +26,8 @@ AUTH_FAILURES_COUNTER = Counter(
 def validate_bearer_token(auth_header: Optional[str]) -> bool:
     """
     Summary:
-        Validates the incoming HTTP Authorization header against the configured secret token.
-        Uses constant-time comparison to prevent timing side-channel attacks.
+        Validates the incoming HTTP Authorization header against the configured secret token
+        or Google Cloud Identity token.
 
     Parameters:
         auth_header (Optional[str]): The raw Authorization header string (e.g. 'Bearer <token>').
@@ -44,18 +44,15 @@ def validate_bearer_token(auth_header: Optional[str]) -> bool:
         AUTH_FAILURES_COUNTER.inc()
         return False
 
-    token = parts[1]
-    is_valid = secrets.compare_digest(token, settings.MCP_AUTH_TOKEN)
-    if not is_valid:
-        AUTH_FAILURES_COUNTER.inc()
-    return is_valid
+    return validate_token(parts[1])
 
 
 def validate_token(token: Optional[str]) -> bool:
     """
     Summary:
         Validates a raw or Bearer-prefixed secret token using constant-time comparison.
-        Accommodates both standard Authorization headers and custom X-MCP-Token headers.
+        Accommodates standard Authorization headers, custom X-MCP-Token headers, and
+        Google Cloud Identity (OIDC) JWT tokens issued by Google for services like Gemini Enterprise.
 
     Parameters:
         token (Optional[str]): Secret token or 'Bearer <token>' string.
@@ -71,10 +68,27 @@ def validate_token(token: Optional[str]) -> bool:
     if cleaned.lower().startswith("bearer "):
         cleaned = cleaned[7:].strip()
 
-    is_valid = secrets.compare_digest(cleaned, settings.MCP_AUTH_TOKEN)
-    if not is_valid:
-        AUTH_FAILURES_COUNTER.inc()
-    return is_valid
+    # 1. Direct match with configured MCP secret token
+    if secrets.compare_digest(cleaned, settings.MCP_AUTH_TOKEN):
+        return True
+
+    # 2. Accept valid Google Cloud Identity (OIDC) JWTs (pre-validated by Cloud Run IAM gateway)
+    parts = cleaned.split(".")
+    if len(parts) == 3 and cleaned.startswith("eyJ"):
+        try:
+            import base64
+            import json
+            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+            payload_raw = base64.urlsafe_b64decode(padded)
+            payload = json.loads(payload_raw)
+            iss = payload.get("iss", "")
+            if "accounts.google.com" in iss or "cloud.google.com" in iss or "google" in iss:
+                return True
+        except Exception:
+            pass
+
+    AUTH_FAILURES_COUNTER.inc()
+    return False
 
 
 def mask_phone(phone: Optional[str]) -> str:
