@@ -550,8 +550,8 @@ python3 scripts/cloudrun_gateway.py
 ```
 
 This binds to your local ports, automatically signs requests with your active `gcloud` identity, and proxies traffic to the live Cloud Run instances with zero 403 Forbidden errors:
-* **CRM Console**: 👉 [http://localhost:8000](http://localhost:8000)
-* **Grafana Dashboards**: 👉 [http://localhost:3000](http://localhost:3000) *(Login: `admin` / `telecom_admin`)*
+* **CRM Console**: 👉 [http://localhost:8000](http://localhost:8000) or [http://localhost:8080](http://localhost:8080)
+* **Grafana Dashboards**: 👉 [http://localhost:3000](http://localhost:3000) *(Anonymous Admin enabled / Direct Access)*
 * **Prometheus Web UI**: 👉 [http://localhost:9090](http://localhost:9090)
 * **FastMCP Server**: 👉 [http://localhost:8001/mcp](http://localhost:8001/mcp)
 * **Loki Log Ingestion**: 👉 [http://localhost:3100](http://localhost:3100)

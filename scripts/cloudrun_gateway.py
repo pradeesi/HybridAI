@@ -15,6 +15,7 @@ import uvicorn
 # Map local port to target Cloud Run service URL
 SERVICES: Dict[int, str] = {
     8000: "https://telecom-crm-console-eniyhtobkq-ew.a.run.app",
+    8080: "https://telecom-crm-console-eniyhtobkq-ew.a.run.app",
     3000: "https://telecom-grafana-eniyhtobkq-ew.a.run.app",
     9090: "https://telecom-prometheus-eniyhtobkq-ew.a.run.app",
     8001: "https://telecom-mcp-server-eniyhtobkq-ew.a.run.app",
@@ -71,6 +72,7 @@ def create_proxy_app(service_name: str, target_url: str) -> FastAPI:
 async def main():
     service_names = {
         8000: "CRM Console",
+        8080: "CRM Console (Port 8080)",
         3000: "Grafana",
         9090: "Prometheus",
         8001: "FastMCP Server",
