@@ -226,27 +226,61 @@ Choose the playbook that fits your target environment:
 
 ---
 
-#### Step-by-Step Instructions:
+#### Step-by-Step Instructions for Proxmox VE (x86 Bare-Metal Host):
 
-1. **Prerequisites on Host**:
-   - Ubuntu 22.04 / Debian 12 (or any Linux distribution) with Docker & Docker Compose plugin installed (`sudo apt install docker.io docker-compose-v2`).
-   - Recommended specs: 4 vCPUs, 8 GB RAM, 30 GB disk.
+1. **Step 1: Provision an Environment in Proxmox VE**
+   *You can choose either a lightweight LXC container (fastest, lowest overhead) or a standard KVM Virtual Machine:*
 
-2. **(Recommended) Mesh VPN Configuration (Tailscale / WireGuard)**:
-   *Gives the box a private, encrypted IP address accessible anywhere without opening firewall ports on your home router.*
+   - **Option A: Lightweight LXC Container (Recommended)**:
+     1. Open your Proxmox VE Web GUI (`https://<proxmox-ip>:8006`).
+     2. Click **Create CT** (top right):
+        - **General**: Set Hostname (e.g., `telecom-hybrid-ai`), uncheck *Unprivileged container* (or keep unprivileged with nesting enabled).
+        - **Template**: Select `ubuntu-22.04-standard` (or `debian-12-standard`).
+        - **Disks**: Allocate `30 GB` or more on your fast storage pool.
+        - **CPU**: Allocate `4 Cores`.
+        - **Memory**: Allocate `8192 MB` (8 GB RAM) and `1024 MB` swap.
+        - **Network**: Bridge `vmbr0`, IPv4: DHCP or Static IP.
+     3. **Crucial Docker Setting for Proxmox LXC**:
+        - Before starting the container, click on the newly created CT -> **Options** -> double-click **Features** -> Check **Nesting** (`nesting=1`) and **keyctl** (`keyctl=1`).
+        - Click **OK**, then click **Start**.
+
+     *(Alternative: Run directly from the Proxmox Host Root Shell):*
+     ```bash
+     pct create 200 local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
+       --hostname telecom-hybrid-ai \
+       --cores 4 \
+       --memory 8192 \
+       --rootfs local-lvm:30 \
+       --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+       --features nesting=1,keyctl=1 \
+       --start 1
+     ```
+
+   - **Option B: Standard QEMU/KVM Virtual Machine**:
+     - Click **Create VM**: Assign 4 vCPUs, 8 GB RAM, 32 GB SSD, and install Ubuntu Server 22.04 or Debian 12.
+
+2. **Step 2: Install Docker Engine & Git Inside the Guest (LXC / VM)**:
+   *Open the Proxmox Console for your container/VM and run:*
+   ```bash
+   apt update && apt install -y docker.io docker-compose-v2 git curl
+   systemctl enable --now docker
+   ```
+
+3. **Step 3: (Recommended) Mesh VPN Configuration (Tailscale)**:
+   *Gives your node a secure, private encrypted IP reachable from your laptop or cloud without opening any ports on your home router:*
    ```bash
    curl -fsSL https://tailscale.com/install.sh | sh
-   sudo tailscale up
-   # Retrieve your private node IP:
+   tailscale up
+   # Note your private node IP:
    tailscale ip -4
    ```
 
-3. **Deploy the Complete Container Stack:**
-   *(Builds application containers and automatically pulls/configures Postgres, Prometheus, Loki, and Grafana)*
+4. **Step 4: Clone & Launch Complete Platform**:
    ```bash
+   git clone https://github.com/pradeesi/HybridAI.git
    cd HybridAI
    cp .env.example .env
-   # Edit .env to set your production MCP_AUTH_TOKEN and passwords
+   # Launch all 6 services with one command:
    docker compose up -d --build
    ```
 
