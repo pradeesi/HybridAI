@@ -94,6 +94,7 @@ class LokiAuditClient:
                         "env": settings.APP_ENV,
                         "event_type": event_type,
                         "tool": tool_name,
+                        "caller": caller_identity,
                         "status": status
                     },
                     "values": [

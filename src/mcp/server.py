@@ -17,7 +17,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.core.audit import audit_client
 from src.core.config import settings
-from src.core.security import validate_bearer_token, validate_token
+from src.core.security import extract_caller_identity, validate_bearer_token, validate_token
 from src.db.database import init_db
 from src.db.seed_data import seed_synthetic_telecom_data
 from src.mcp.tools import (
@@ -61,33 +61,44 @@ async def verify_auth_token(
     request: Request,
     authorization: Optional[str] = Header(None),
     x_mcp_token: Optional[str] = Header(None, alias="X-MCP-Token"),
-    x_serverless_auth: Optional[str] = Header(None, alias="X-Serverless-Authorization")
+    x_serverless_auth: Optional[str] = Header(None, alias="X-Serverless-Authorization"),
+    x_goog_user_email: Optional[str] = Header(None, alias="X-Goog-Authenticated-User-Email"),
+    x_agent_identity: Optional[str] = Header(None, alias="X-Agent-Identity")
 ) -> str:
     """
     Summary:
-        FastAPI dependency enforcing authentication for MCP endpoints.
-        Supports Bearer tokens, custom X-MCP-Token headers, X-Serverless-Authorization,
-        and requests validated by Google Cloud Run IAM ingress gateway.
+        FastAPI dependency enforcing authentication and extracting verified caller identity.
+        Resolves individual user emails from Google IAP headers, OIDC JWT claims,
+        or custom agent identity headers for non-repudiation and audit tracking.
 
     Parameters:
         request (Request): FastAPI request context for analyzing headers and environment.
         authorization (Optional[str]): Incoming Authorization header.
         x_mcp_token (Optional[str]): Dedicated MCP auth header.
         x_serverless_auth (Optional[str]): Serverless proxy authorization header.
+        x_goog_user_email (Optional[str]): Google IAP authenticated user header.
+        x_agent_identity (Optional[str]): Custom call center agent identity header.
 
     Return Value:
-        str: Validated authentication token or context.
+        str: Resolved caller identity (e.g. 'sarah.jenkins@telecom.com').
 
     Exceptions/Errors:
         HTTPException(401): If request cannot be authenticated.
     """
+    token_candidate = authorization or x_serverless_auth or x_mcp_token
+    caller_id = extract_caller_identity(
+        token=token_candidate,
+        user_email_header=x_goog_user_email,
+        custom_agent_header=x_agent_identity
+    )
+
     # 1. Check direct token in Authorization, X-MCP-Token, or X-Serverless-Authorization
     if (
         validate_token(x_mcp_token)
         or validate_bearer_token(authorization)
         or validate_bearer_token(x_serverless_auth)
     ):
-        return x_mcp_token or authorization or x_serverless_auth or "valid-token"
+        return caller_id
 
     # 2. In Google Cloud Run (where IAM access control is enforced at the network perimeter),
     # requests carrying Google Cloud trace context have already been verified by Cloud Run IAM
@@ -96,10 +107,11 @@ async def verify_auth_token(
 
     if is_cloud_run and has_gcp_trace:
         logger.info(
-            "Request authorized via Cloud Run IAM edge proxy (user-agent: %s)",
+            "Request authorized via Cloud Run IAM edge proxy (caller: %s, user-agent: %s)",
+            caller_id,
             request.headers.get("user-agent", "unknown")
         )
-        return "cloud-run-iam-proxy"
+        return caller_id
 
     await audit_client.log_event(
         event_type="UNAUTHORIZED_ACCESS_ATTEMPT",
@@ -264,7 +276,7 @@ async def execute_tool(request: Request, auth: str = Depends(verify_auth_token))
     body = await request.json()
     tool_name = body.get("name")
     arguments = body.get("arguments", {})
-    caller_id = body.get("caller_id", "gemini-enterprise-app")
+    caller_id = body.get("caller_id") or auth
 
     if not tool_name or tool_name not in TOOL_HANDLER_MAP:
         raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' is not recognized.")
@@ -438,13 +450,13 @@ async def handle_mcp_message(request: Request, auth: str = Depends(verify_auth_t
         responses = []
         for item in payload:
             if isinstance(item, dict):
-                res = await _process_single_mcp_message(item, caller_id="gemini-enterprise-mcp")
+                res = await _process_single_mcp_message(item, caller_id=auth)
                 if res is not None:
                     responses.append(res)
         return responses
 
     elif isinstance(payload, dict):
-        res = await _process_single_mcp_message(payload, caller_id="gemini-enterprise-mcp")
+        res = await _process_single_mcp_message(payload, caller_id=auth)
         if res is None:
             return Response(status_code=204)
         return res

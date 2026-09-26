@@ -91,6 +91,58 @@ def validate_token(token: Optional[str]) -> bool:
     return False
 
 
+def extract_caller_identity(
+    token: Optional[str] = None,
+    user_email_header: Optional[str] = None,
+    custom_agent_header: Optional[str] = None
+) -> str:
+    """
+    Summary:
+        Extracts the individual human agent or caller identity from Google IAP headers,
+        decoded OIDC/OAuth JWT claims, or custom headers.
+
+    Parameters:
+        token (Optional[str]): Bearer token string or X-Serverless-Authorization string.
+        user_email_header (Optional[str]): Value of X-Goog-Authenticated-User-Email.
+        custom_agent_header (Optional[str]): Value of X-Agent-Identity or X-Agent-Email.
+
+    Return Value:
+        str: Extracted user identity (e.g., 'sarah.jenkins@telecom.com') or fallback.
+    """
+    # 1. Google Cloud IAP Header: 'accounts.google.com:user@example.com'
+    if user_email_header:
+        clean = user_email_header.replace("accounts.google.com:", "").strip()
+        if clean:
+            return clean
+
+    # 2. Custom Agent identity header (e.g. passed from frontends or reverse proxies)
+    if custom_agent_header and custom_agent_header.strip():
+        return custom_agent_header.strip()
+
+    # 3. Decoded Google Cloud Identity / OIDC JWT payload
+    if token:
+        cleaned = token.strip()
+        if cleaned.lower().startswith("bearer "):
+            cleaned = cleaned[7:].strip()
+        parts = cleaned.split(".")
+        if (len(parts) == 3 or len(parts) == 2) and cleaned.startswith("eyJ"):
+            try:
+                import base64
+                import json
+                padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+                payload_raw = base64.urlsafe_b64decode(padded)
+                payload = json.loads(payload_raw)
+                # Check for email or subject in claims
+                if "email" in payload and payload["email"]:
+                    return payload["email"]
+                if "sub" in payload and payload["sub"]:
+                    return f"user:{payload['sub']}"
+            except Exception:
+                pass
+
+    return "gemini-enterprise-agent"
+
+
 def mask_phone(phone: Optional[str]) -> str:
     """
     Summary:

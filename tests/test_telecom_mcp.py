@@ -13,7 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_telecom.db"
 os.environ["MCP_AUTH_TOKEN"] = "test-secret-token-12345"
 
 from src.core.security import (
-    mask_phone, mask_ssn, mask_credit_card, mask_street_address,
+    extract_caller_identity, mask_phone, mask_ssn, mask_credit_card, mask_street_address,
     validate_bearer_token, sanitize_customer_record
 )
 from src.db.database import init_db
@@ -58,6 +58,18 @@ class TestSecurityAndPII(unittest.TestCase):
         self.assertFalse(validate_bearer_token(None))
         # Malformed header
         self.assertFalse(validate_bearer_token("Basic test-secret-token-12345"))
+
+    def test_extract_caller_identity(self):
+        # 1. Google Cloud IAP header with prefix
+        iap_header = "accounts.google.com:sarah.jenkins@telecom.com"
+        self.assertEqual(extract_caller_identity(user_email_header=iap_header), "sarah.jenkins@telecom.com")
+
+        # 2. Custom Agent Identity header
+        custom_header = "executive-mike@telecom.com"
+        self.assertEqual(extract_caller_identity(custom_agent_header=custom_header), "executive-mike@telecom.com")
+
+        # 3. Fallback when no headers present
+        self.assertEqual(extract_caller_identity(), "gemini-enterprise-agent")
 
 
 class TestMCPToolsAndDatabase(unittest.IsolatedAsyncioTestCase):
