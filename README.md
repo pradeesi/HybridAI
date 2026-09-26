@@ -380,16 +380,82 @@ gcloud artifacts repositories create hybrid-ai-repo \
 # 2. Clone repository in Cloud Shell and navigate into the project folder:
 git clone https://github.com/pradeesi/HybridAI.git
 cd HybridAI
+```
 
-# 3. Build and submit container image via Cloud Build (run from inside HybridAI folder):
+---
+
+#### 4. Automated One-Click Deployment (Recommended)
+
+To deploy the entire 5-service stack with 100% environment parity in a single step, execute the automated Cloud Run deployment script:
+
+```bash
+chmod +x deploy/deploy-cloudrun.sh
+./deploy/deploy-cloudrun.sh
+```
+
+This script automatically:
+1. Builds the core application and observability container images via Google Cloud Build.
+2. Deploys **`telecom-loki`**, **`telecom-prometheus`**, and **`telecom-grafana`** to Cloud Run.
+3. Automatically injects internal service URLs into Grafana's pre-provisioned Prometheus and Loki datasources.
+4. Deploys **`telecom-mcp-server`** and **`telecom-crm-console`** wired directly to Loki log streaming.
+5. Configures domain and invoker IAM permissions.
+
+---
+
+#### 5. Step-by-Step Manual Deployment:
+
+If you prefer deploying and managing each component individually:
+
+##### Step 5.1: Build Container Images via Cloud Build
+```bash
+# 1. Build core application container (MCP Server & CRM Console):
 gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
+
+# 2. Build observability containers (Grafana, Prometheus, and Loki):
+gcloud builds submit --config=deploy/cloudbuild-observability.yaml .
 ```
 
----
+##### Step 5.2: Deploy Loki (Log Aggregation & Audit TSDB)
+```bash
+gcloud run deploy telecom-loki \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/telecom-loki:latest \
+    --platform managed \
+    --region ${REGION} \
+    --port 3100 \
+    --allow-unauthenticated \
+    --project ${PROJECT_ID}
 
-#### 4. Deploy FastMCP Server to Cloud Run:
+LOKI_URL=$(gcloud run services describe telecom-loki --region ${REGION} --format="value(status.url)")
+```
 
-**For Option A (Standalone Demo — No Cloud SQL):**
+##### Step 5.3: Deploy Prometheus (Metrics Scraper)
+```bash
+gcloud run deploy telecom-prometheus \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/telecom-prometheus:latest \
+    --platform managed \
+    --region ${REGION} \
+    --port 9090 \
+    --allow-unauthenticated \
+    --project ${PROJECT_ID}
+
+PROM_URL=$(gcloud run services describe telecom-prometheus --region ${REGION} --format="value(status.url)")
+```
+
+##### Step 5.4: Deploy Grafana (Contact Center & Security Dashboards)
+```bash
+gcloud run deploy telecom-grafana \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/telecom-grafana:latest \
+    --platform managed \
+    --region ${REGION} \
+    --port 3000 \
+    --set-env-vars PROMETHEUS_URL="${PROM_URL}",LOKI_URL="${LOKI_URL}",GF_SECURITY_ADMIN_USER=admin,GF_SECURITY_ADMIN_PASSWORD=telecom_admin \
+    --allow-unauthenticated \
+    --project ${PROJECT_ID}
+
+GRAFANA_URL=$(gcloud run services describe telecom-grafana --region ${REGION} --format="value(status.url)")
+```
+
+##### Step 5.5: Deploy FastMCP Server (Wired to Loki)
 ```bash
 gcloud run deploy telecom-mcp-server \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
@@ -397,98 +463,72 @@ gcloud run deploy telecom-mcp-server \
     --region ${REGION} \
     --command="python3,-m,src.mcp.server" \
     --port 8001 \
-    --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987" \
-    --allow-unauthenticated
+    --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",LOKI_URL="${LOKI_URL}" \
+    --allow-unauthenticated \
+    --project ${PROJECT_ID}
+
+MCP_URL=$(gcloud run services describe telecom-mcp-server --region ${REGION} --format="value(status.url)")
 ```
 
-**For Option B (With Managed Cloud SQL):**
+##### Step 5.6: Deploy CRM Agent Console (Wired to Loki)
 ```bash
-gcloud run deploy telecom-mcp-server \
+gcloud run deploy telecom-crm-console \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
     --platform managed \
     --region ${REGION} \
-    --command="python3,-m,src.mcp.server" \
-    --port 8001 \
-    --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
-    --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
-    --allow-unauthenticated
+    --command="python3,-m,src.crm.app" \
+    --port 8000 \
+    --set-env-vars APP_ENV=production,CRM_PORT=8000,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",LOKI_URL="${LOKI_URL}" \
+    --allow-unauthenticated \
+    --project ${PROJECT_ID}
+
+CRM_URL=$(gcloud run services describe telecom-crm-console --region ${REGION} --format="value(status.url)")
 ```
-*Note the generated HTTPS URL (e.g. `https://telecom-mcp-server-xyz-uc.a.run.app`). The SSE endpoint will be `https://telecom-mcp-server-xyz-uc.a.run.app/sse`.*
 
 ---
 
-#### 5. Deploy CRM Agent Console to Cloud Run:
+#### 6. Accessing & Verifying the Services:
 
-**For Option A (Standalone Demo — No Cloud SQL):**
+##### A. Service URLs Summary
+| Component | Cloud Run URL | Credentials / Access |
+| :--- | :--- | :--- |
+| **Grafana** | `${GRAFANA_URL}` | User: `admin` / Password: `telecom_admin` |
+| **Prometheus** | `${PROM_URL}` | Targets: `${PROM_URL}/targets` |
+| **Loki** | `${LOKI_URL}` | Health: `${LOKI_URL}/ready` |
+| **CRM Console** | `${CRM_URL}` | Frontline Agent Web Console |
+| **FastMCP Server** | `${MCP_URL}` | SSE / JSON-RPC: `${MCP_URL}/mcp` |
+
+##### B. Configure Invoker IAM Permissions (Domain-Restricted Orgs)
+If your Google Cloud organization enforces Domain Restricted Sharing (e.g. `pradeesi.altostrat.com`):
 ```bash
-gcloud run deploy telecom-crm-console \
-    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
-    --platform managed \
-    --region ${REGION} \
-    --port 8000 \
-    --set-env-vars APP_ENV=production,CRM_PORT=8000 \
-    --allow-unauthenticated
+for SVC in telecom-crm-console telecom-mcp-server telecom-grafana telecom-prometheus telecom-loki; do
+    gcloud run services add-iam-policy-binding ${SVC} --region=${REGION} --member="domain:pradeesi.altostrat.com" --role="roles/run.invoker" --project=${PROJECT_ID} --quiet || true
+    gcloud run services add-iam-policy-binding ${SVC} --region=${REGION} --member="user:$(gcloud config get-value account)" --role="roles/run.invoker" --project=${PROJECT_ID} --quiet || true
+done
 ```
-
-**For Option B (With Managed Cloud SQL):**
-```bash
-gcloud run deploy telecom-crm-console \
-    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
-    --platform managed \
-    --region ${REGION} \
-    --port 8000 \
-    --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
-    --set-env-vars APP_ENV=production,CRM_PORT=8000,DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
-    --allow-unauthenticated
-```
-
-#### 6. Verify Deployments & Access the CRM Console:
-
-##### A. Configure Invoker IAM Permissions
-Depending on your Google Cloud organization's security policy:
-- **If your project allows public access:**
-  ```bash
-  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="allUsers" --role="roles/run.invoker"
-  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="allUsers" --role="roles/run.invoker"
-  ```
-- **If your organization enforces Domain Restricted Sharing (e.g. `pradeesi.altostrat.com`):**
-  ```bash
-  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="domain:pradeesi.altostrat.com" --role="roles/run.invoker"
-  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="user:$(gcloud config get-value account)" --role="roles/run.invoker"
-
-  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="domain:pradeesi.altostrat.com" --role="roles/run.invoker"
-  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="user:$(gcloud config get-value account)" --role="roles/run.invoker"
-  ```
-
-##### B. Access the CRM Console in Your Browser
-- **Option 1 (Direct URL if public):** Open the URL returned by `gcloud run services describe telecom-crm-console --region=${REGION} --format='value(status.url)'`.
-- **Option 2 (Cloud Run Authenticated Proxy — Works in all environments including domain-restricted orgs):**
-  ```bash
-  # Proxies the Cloud Run service locally with automated GCP authentication:
-  gcloud run services proxy telecom-crm-console --region=${REGION} --port=8080
-  ```
-  Open `http://localhost:8080` in your web browser or Cloud Shell Web Preview to explore the Frontline CRM dashboard.
 
 ##### C. Verify Endpoints via CLI
 ```bash
 TOKEN=$(gcloud auth print-identity-token)
-CRM_URL=$(gcloud run services describe telecom-crm-console --region=${REGION} --format='value(status.url)')
-MCP_URL=$(gcloud run services describe telecom-mcp-server --region=${REGION} --format='value(status.url)')
 
-# 1. Verify CRM Console Health
-curl -s -H "Authorization: Bearer ${TOKEN}" "${CRM_URL}/health"
-# Returns: {"status":"healthy","service":"telecom-crm-console"}
+# 1. Verify Grafana Health
+curl -s -H "Authorization: Bearer ${TOKEN}" "${GRAFANA_URL}/api/health"
+# Returns: {"commit":"...","database":"ok","version":"10.4.0"}
 
-# 2. Verify FastMCP Server Health
+# 2. Verify Prometheus Health
+curl -s -H "Authorization: Bearer ${TOKEN}" "${PROM_URL}/-/healthy"
+# Returns: Prometheus Server is Healthy.
+
+# 3. Verify FastMCP Server Health
 curl -s -H "Authorization: Bearer ${TOKEN}" "${MCP_URL}/health"
 # Returns: {"status":"healthy","service":"telecom-mcp-server","version":"1.0.0"}
 
-# 3. Test MCP Tool Execution (search_customer)
-curl -s -X POST "${MCP_URL}/execute" \
+# 4. Test MCP Tool Execution
+curl -s -X POST "${MCP_URL}/mcp" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "X-MCP-Token: telecom-mcp-secret-token-change-in-prod-xyz987" \
   -H "Content-Type: application/json" \
-  -d '{"name": "search_customer", "arguments": {"query": "Elena"}}' | jq .
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_customer", "arguments": {"query": "Elena"}}}' | jq .
 ```
 
 ---
@@ -766,16 +806,13 @@ docker compose down -v --rmi local --remove-orphans
 export PROJECT_ID="pradeesi-ai-demo"
 export REGION="europe-west1"
 
-# 1. Delete ONLY the two demo Cloud Run services:
-gcloud run services delete telecom-mcp-server \
-    --region=${REGION} \
-    --project=${PROJECT_ID} \
-    --quiet
-
-gcloud run services delete telecom-crm-console \
-    --region=${REGION} \
-    --project=${PROJECT_ID} \
-    --quiet
+# 1. Delete all 5 demo Cloud Run services:
+for SVC in telecom-crm-console telecom-mcp-server telecom-grafana telecom-prometheus telecom-loki; do
+    gcloud run services delete ${SVC} \
+        --region=${REGION} \
+        --project=${PROJECT_ID} \
+        --quiet || true
+done
 
 # 2. Delete ONLY the demo Cloud SQL instance:
 gcloud sql instances delete telecom-pg-instance \
