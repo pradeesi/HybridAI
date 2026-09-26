@@ -1,24 +1,48 @@
 # Purpose: Prometheus scraping configuration for Telecom HybridAI platform.
-# Architecture/Context: Scrapes metrics from MCP server and CRM application containers.
-# Dependencies/Side Effects: Scrapes targets at 5s intervals for high-fidelity dashboards.
+# Architecture/Context: Scrapes metrics from MCP server and CRM application containers across both Local and Cloud Run.
+# Dependencies/Side Effects: Scrapes targets at 10s intervals for real-time dashboards.
 
 global:
-  scrape_interval: 5s
-  evaluation_interval: 5s
+  scrape_interval: 10s
+  evaluation_interval: 10s
 
 scrape_configs:
-  - job_name: "telecom-mcp-server"
+  - job_name: "telecom-mcp-server-local"
     metrics_path: "/metrics"
+    scheme: http
     static_configs:
       - targets: ["mcp-server:8001"]
         labels:
           app: "hybrid-ai"
           component: "mcp-server"
+          environment: "local"
 
-  - job_name: "telecom-crm-console"
+  - job_name: "telecom-crm-console-local"
     metrics_path: "/metrics"
+    scheme: http
     static_configs:
       - targets: ["crm-app:8000"]
         labels:
           app: "hybrid-ai"
           component: "crm-app"
+          environment: "local"
+
+  - job_name: "telecom-mcp-server-cloud"
+    metrics_path: "/metrics"
+    scheme: https
+    static_configs:
+      - targets: ["telecom-mcp-server-1111937452.europe-west1.run.app:443"]
+        labels:
+          app: "hybrid-ai"
+          component: "mcp-server"
+          environment: "cloud"
+
+  - job_name: "telecom-crm-console-cloud"
+    metrics_path: "/metrics"
+    scheme: https
+    static_configs:
+      - targets: ["telecom-crm-console-1111937452.europe-west1.run.app:443"]
+        labels:
+          app: "hybrid-ai"
+          component: "crm-app"
+          environment: "cloud"

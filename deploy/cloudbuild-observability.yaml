@@ -1,0 +1,19 @@
+# Purpose: Cloud Build configuration to build Grafana, Prometheus, and Loki for Google Cloud Run.
+# Architecture/Context: Packages observability stack into Artifact Registry images.
+steps:
+  # 1. Build Loki
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-loki:latest', '-f', 'deploy/loki/Dockerfile', '.']
+
+  # 2. Build Prometheus
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-prometheus:latest', '-f', 'deploy/prometheus/Dockerfile', '.']
+
+  # 3. Build Grafana
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-grafana:latest', '-f', 'deploy/grafana/Dockerfile', '.']
+
+images:
+  - 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-loki:latest'
+  - 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-prometheus:latest'
+  - 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-grafana:latest'

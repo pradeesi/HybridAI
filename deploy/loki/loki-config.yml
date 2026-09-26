@@ -1,6 +1,6 @@
 # Purpose: Grafana Loki storage, authentication, and ingestion configuration.
 # Architecture/Context: Central repository for immutable audit logs streamed from MCP and CRM.
-# Dependencies/Side Effects: Listens on HTTP port 3100.
+# Dependencies/Side Effects: Listens on HTTP port 3100; uses /tmp/loki for universal writeability across Docker and Cloud Run.
 
 auth_enabled: false
 
@@ -9,11 +9,11 @@ server:
   grpc_listen_port: 9096
 
 common:
-  path_prefix: /loki
+  path_prefix: /tmp/loki
   storage:
     filesystem:
-      chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
   replication_factor: 1
   ring:
     instance_addr: 127.0.0.1
