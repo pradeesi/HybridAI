@@ -1,6 +1,6 @@
 """
 Purpose: FastMCP Server implementing Server-Sent Events (SSE) and JSON-RPC 2.0 with Bearer Authentication.
-Architecture/Context: External entry point for Gemini Enterprise App and AI Copilot clients.
+Architecture/Context: External entry point for Gemini Enterprise App and AI Assistant clients.
 Dependencies/Side Effects: Enforces token security, streams events to clients, exposes Prometheus metrics.
 """
 

@@ -19,7 +19,7 @@ Built with **Python 3.11+ (FastAPI)**, **Jinja2**, **HTML5**, **locally stored B
 The platform supports a synchronized **Dual-Pane Agent Workflow**:
 
 1. **Telecom CRM Agent Console**: Frontline desktop web interface displaying subscriber 360 profiles, live equipment telemetry (optical Rx power dBm, Wi-Fi interference, packet loss), billing history, and one-click remote diagnostic triggers.
-2. **Google Gemini Enterprise App (Copilot)**: Interacts with the **FastMCP Server** over an encrypted SSE connection. It queries subscriber diagnostics, checks area outages, computes personalized upgrade pitches, and analyzes billing disputes.
+2. **Google Gemini Enterprise App (GE App)**: Interacts with the **FastMCP Server** over an encrypted SSE connection. It queries subscriber diagnostics, checks area outages, computes personalized upgrade pitches, and analyzes billing disputes.
 
 ```mermaid
 graph TD
@@ -49,7 +49,7 @@ graph TD
     end
 
     Agent -->|Navigates Customer Profile| CRM_UI
-    Agent -->|Queries AI Copilot| GE_App
+    Agent -->|Queries AI Assistant| GE_App
     CRM_UI --> CRM_Backend
     GE_App -->|SSE /tools/call + Bearer Auth| AuthGuard
     AuthGuard --> MCP_Server
@@ -120,7 +120,7 @@ HybridAI/
 │       └── templates/                         # Jinja2 HTML templates
 │           ├── base.html                      # Master layout with responsive navbar & status indicators
 │           ├── customer_detail.html           # Customer 360 console with live telemetry & remote action buttons
-│           └── dashboard.html                 # Queue view, active outages banner, and GE Copilot helper
+│           └── dashboard.html                 # Queue view, active outages banner, and GE App integration helper
 └── tests/
     └── test_telecom_mcp.py                    # Automated test suite (PII, Auth, DB seeding, MCP tools)
 ```
