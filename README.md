@@ -634,11 +634,39 @@ For clients supporting SSE transport:
 - `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
 - `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
 
-### Sample Prompts for Human Call Center Agent with GE App:
-- *"Elena Rostova is calling about frequent buffering and slow Wi-Fi. Check her line diagnostics and run any necessary remote action."*
-- *"Marcus Vance says his mobile internet is suddenly crawling. Check his 5G subscription and tell me what plan booster we can pitch to fix it."*
-- *"Amina Al-Mansoor is disputing a roaming charge from London. What charges were billed and what travel pass should I offer her?"*
-- *"David Chen is happy with his service. Does his usage pattern qualify him for a fiber speed tier upgrade?"*
+### Comprehensive Test Prompts for Gemini Enterprise Chat:
+
+Below are production-ready prompt scenarios mapped to the pre-seeded synthetic personas. Use these in Gemini Enterprise chat to test automated tool selection, reasoning, and end-to-end customer care workflows:
+
+#### Scenario 1: Customer 360 Lookup & Deep Diagnostics (Elena Rostova)
+> *"Elena Rostova is on the line experiencing slow broadband speeds and intermittent buffering. Can you look up her customer profile, check her line diagnostics, and recommend a resolution?"*
+- **Tools Invoked Automatically**: `search_customer` &rarr; `get_customer_360` &rarr; `get_service_diagnostics`
+- **Expected Outcome**: Identifies ONT hardware `ONT-HW-99281-FBR`, notes optical signal degradation (-28.4 dBm) and packet loss (3.8%), and recommends a remote ONT reboot or technician check. All sensitive PII (phone, SSN, address) remains masked.
+
+#### Scenario 2: Remote Hardware Remediation (Reboot ONT Terminal)
+> *"Run a remote reboot on Elena's ONT optical terminal to restore her line levels."*
+- **Tool Invoked Automatically**: `run_remote_device_action` (`device_id="5789bc85-d391-4b49-8893-337136c3faba"`, `action="reboot"`)
+- **Expected Outcome**: Triggers remote device reboot, sets status to `HEALTHY`, logs security audit event with caller identity, and returns confirmation.
+
+#### Scenario 3: Throttled 5G Plan & Upsell Offer (Marcus Vance)
+> *"Marcus Vance is asking why his 5G mobile data has slowed to a crawl. Check his mobile usage and give me an upgrade offer I can pitch to him."*
+- **Tools Invoked Automatically**: `search_customer` &rarr; `get_service_diagnostics` &rarr; `get_upsell_recommendations`
+- **Expected Outcome**: Detects throttled mobile line (50 GB cap exceeded on 5G Pro), retrieves the `Unlimited 5G Data Pass` upgrade offer with pricing, and generates an empathetic agent pitch script.
+
+#### Scenario 4: Billing Dispute & Roaming Audit (Amina Al-Mansoor)
+> *"Amina Al-Mansoor is disputing an unexpected international roaming charge on her recent invoice. What charges were billed and what travel pass should she have used?"*
+- **Tools Invoked Automatically**: `search_customer` &rarr; `get_billing_breakdown`
+- **Expected Outcome**: Analyzes invoice line items, isolates $85 roaming data fee from London Heathrow, and suggests applying a one-time courtesy credit along with activating the Global Roaming Add-on ($15/mo). Card details are PCI-DSS masked.
+
+#### Scenario 5: Infrastructure & Area Outage Detection
+> *"David Chen is reporting internet connectivity issues in the 98101 postal code area. Are there any active fiber cuts or cell tower maintenance impacting his location?"*
+- **Tools Invoked Automatically**: `search_customer` &rarr; `check_network_outages`
+- **Expected Outcome**: Returns active fiber maintenance in Seattle Downtown (98101) with estimated repair time, advising the agent to reassure the customer without dispatching an unnecessary truck roll.
+
+#### Scenario 6: Call Interaction Logging & CRM Record
+> *"Log this interaction for Elena Rostova: We diagnosed optical signal degradation, executed a remote reboot on her ONT terminal, confirmed line levels stabilized, and offered a Gigabit upgrade pitch. Call duration 240 seconds."*
+- **Tool Invoked Automatically**: `log_agent_interaction` (`customer_id=...`, `issue_summary=...`, `resolution_summary=...`, `upsell_offered=True`)
+- **Expected Outcome**: Persists structured call record into the database, updates CRM dashboard, and records audit trail entry.
 
 ---
 
