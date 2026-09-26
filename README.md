@@ -694,6 +694,32 @@ For clients supporting SSE transport:
 
 ---
 
+### 8.1 Call Center Executive Skill & Operations Playbook (`skills/telecom_customer_care_agent/SKILL.md`)
+
+To bridge backend capabilities with enterprise customer care policies, this repository includes a production-grade **Skill Playbook** located at [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md).
+
+#### Why Pair the FastMCP Server with an Operations Skill?
+* **Decoupled Architecture (Capabilities vs. Governance)**:
+  - The **FastMCP Server** provides the *capabilities* (low-level database queries, line attenuation measurements, ONT reboots, and PII masking).
+  - The **Skill Playbook** provides the *governance & empathy* (when to ask for verification, how to sequence diagnostics, goodwill courtesy thresholds, and cross-selling guardrails).
+* **Zero-Downtime Policy & Empathy Tuning**:
+  - Non-technical stakeholders (**Operations Managers, Quality Assurance (QA) Auditors, Compliance Officers, and CX Designers**) can tweak phrasing, empathy standards, or courtesy credit amounts directly in Markdown **without writing code, rebuilding containers, or redeploying Cloud Run**.
+* **Hand-in-Hand Synergy**:
+  - Guides Gemini Enterprise to follow strict SOP phases:
+    1. **Phase 1: Caller Identity Disambiguation** (resolves multiple users with identical names via account/phone confirmation).
+    2. **Phase 2: Diagnostic & Remote Action Flow** (checks area outages *before* rebooting hardware).
+    3. **Phase 3: Billing Dispute & Goodwill Credit** (empowers frontline agents with up to $100 courtesy credits).
+    4. **Phase 4: Contextual Upselling Guardrails** (enforces the "Golden Rule": never upsell to an unhappy customer or during an active outage).
+    5. **Phase 5: Mandatory CRM Logging** (ensures 100% compliance documentation).
+
+#### How to Add This Skill to Gemini Enterprise:
+1. In the **Gemini Enterprise Admin Console**, select your Agent / App.
+2. Navigate to **Agent Configuration / System Instructions / Playbooks**.
+3. Copy the contents of [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md) and paste it into the **System Instructions** or **Agent Playbook** editor.
+4. Save the configuration. Gemini Enterprise will now automatically govern all 8 MCP tools using these operational procedures.
+
+---
+
 ## 9. Complete Environment Teardown & Targeted Cleanup Playbooks
 
 > [!CAUTION]
