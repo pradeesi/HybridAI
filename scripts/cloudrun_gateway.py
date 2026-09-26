@@ -69,6 +69,59 @@ def create_proxy_app(service_name: str, target_url: str) -> FastAPI:
 
     return app
 
+
+async def sync_grafana_datasources() -> None:
+    """
+    Summary:
+        Periodically provisions and updates Grafana datasources (Loki & Prometheus)
+        with fresh Google IAM Bearer tokens to prevent authorization errors.
+    """
+    # Wait for the local gateway proxy servers to initialize
+    await asyncio.sleep(3)
+    while True:
+        try:
+            token = get_id_token()
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # 1. Update Loki datasource
+                await client.put(
+                    "http://127.0.0.1:3000/api/datasources/2",
+                    json={
+                        "id": 2,
+                        "uid": "P8E80F9AEF21F6940",
+                        "orgId": 1,
+                        "name": "Loki",
+                        "type": "loki",
+                        "access": "proxy",
+                        "url": SERVICES[3100],
+                        "jsonData": {"httpHeaderName1": "Authorization"},
+                        "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
+                        "version": 1
+                    }
+                )
+                # 2. Update Prometheus datasource
+                await client.put(
+                    "http://127.0.0.1:3000/api/datasources/1",
+                    json={
+                        "id": 1,
+                        "uid": "PBFA97CFB590B2093",
+                        "orgId": 1,
+                        "name": "Prometheus",
+                        "type": "prometheus",
+                        "access": "proxy",
+                        "url": SERVICES[9090],
+                        "jsonData": {"httpHeaderName1": "Authorization"},
+                        "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
+                        "version": 1
+                    }
+                )
+                print("[Gateway] Synced Grafana datasources (Loki & Prometheus) with fresh IAM token.")
+        except Exception as exc:
+            print(f"[Gateway] Background datasource sync warning: {exc}")
+
+        # Automatically refresh every 30 minutes before token expiration
+        await asyncio.sleep(1800)
+
+
 async def main():
     service_names = {
         8000: "CRM Console",
@@ -88,6 +141,7 @@ async def main():
         servers.append(server.serve())
         print(f"[Gateway] http://localhost:{port} -> {name} ({target})")
         
+    servers.append(sync_grafana_datasources())
     await asyncio.gather(*servers)
 
 if __name__ == "__main__":

@@ -7,7 +7,9 @@ Dependencies/Side Effects: Asynchronously ships log streams to Loki via HTTP; fa
 import asyncio
 import json
 import logging
+import subprocess
 import time
+import urllib.request
 from typing import Any, Dict, Optional
 import httpx
 from src.core.config import settings
@@ -39,6 +41,48 @@ class LokiAuditClient:
         self._push_endpoint = f"{self.loki_url.rstrip('/')}/loki/api/v1/push" if self.loki_url else None
         # HTTP client with short timeouts so audit streaming never impedes response latencies
         self._http_client = httpx.AsyncClient(timeout=2.0)
+        self._cached_token = ""
+        self._token_expiry = 0.0
+
+    def _get_auth_header(self) -> Dict[str, str]:
+        """
+        Summary:
+            Retrieves an Authorization header with GCP Bearer ID token if target is Cloud Run.
+
+        Return Value:
+            Dict[str, str]: Dictionary containing Authorization header if applicable.
+        """
+        if not self.loki_url or not self.loki_url.startswith("https://"):
+            return {}
+
+        now = time.time()
+        if self._cached_token and now < self._token_expiry:
+            return {"Authorization": f"Bearer {self._cached_token}"}
+
+        # 1. Fetch from Cloud Run instance metadata server
+        try:
+            req = urllib.request.Request(
+                f"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience={self.loki_url}",
+                headers={"Metadata-Flavor": "Google"}
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                self._cached_token = resp.read().decode("utf-8").strip()
+                self._token_expiry = now + 3000.0  # 50 minutes cache
+                return {"Authorization": f"Bearer {self._cached_token}"}
+        except Exception:
+            pass
+
+        # 2. Local fallback to gcloud if running on developer workstation
+        try:
+            res = subprocess.run(["gcloud", "auth", "print-identity-token"], capture_output=True, text=True, timeout=2.0)
+            if res.returncode == 0:
+                self._cached_token = res.stdout.strip()
+                self._token_expiry = now + 3000.0
+                return {"Authorization": f"Bearer {self._cached_token}"}
+        except Exception:
+            pass
+
+        return {}
 
     async def log_event(
         self,
@@ -104,12 +148,15 @@ class LokiAuditClient:
             ]
         }
 
+        headers = {"Content-Type": "application/json"}
+        headers.update(self._get_auth_header())
+
         try:
             # Dispatch non-blocking HTTP push
             response = await self._http_client.post(
                 self._push_endpoint,
                 json=loki_payload,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
             if response.status_code not in (200, 204):
                 logger.warning("Loki returned non-success response %d: %s", response.status_code, response.text)
