@@ -513,84 +513,105 @@ To connect the **Google Gemini Enterprise App** to this FastMCP server:
 
 ---
 
-## 9. Complete Environment Teardown & Cleanup Playbooks
+## 9. Complete Environment Teardown & Targeted Cleanup Playbooks
 
-To prevent unwanted cloud billing or eliminate orphaned containers, volumes, and networks, execute the teardown playbook corresponding to your environment:
+> [!CAUTION]
+> **Strict Isolation & Safety Guarantee**:
+> The cleanup commands below are explicitly namespaced and targeted **only** to the services, databases, and containers created for this demo (`telecom-*`, `hybrid-ai-*`). They will **never** delete, modify, or impact any other applications, clusters, databases, or storage in your Google Cloud project or home lab.
 
-### Teardown A: Local Standalone Python
+---
+
+### Teardown A: Local Standalone Python (Scoped to HybridAI Folder)
+*Cleans up only the virtual environment and local database file within this directory:*
 ```bash
+cd HybridAI
+
 # 1. Stop background processes (Ctrl+C in terminal windows)
-# 2. Deactivate and remove Python virtual environment
+
+# 2. Deactivate and remove the project virtual environment
 deactivate 2>/dev/null || true
 rm -rf .venv/
 
-# 3. Clean up local SQLite and cache files
+# 3. Clean up local demo SQLite database files and caches
 rm -f telecom_local.db* test_telecom.db*
-find . -type d -name "__pycache__" -exec rm -rf {} +
+find src tests -type d -name "__pycache__" -exec rm -rf {} +
 ```
 
 ---
 
 ### Teardown B: Home Lab / Proxmox (Docker Compose)
-*Stops and purges all 6 containers, networks, persistent storage volumes, and local images with a single command:*
+*Stops and purges only the 6 demo containers and their associated storage volumes, without affecting any other Docker containers running on the host:*
 ```bash
 cd HybridAI
 
-# 1. Stop and purge containers, networks, persistent volumes (-v), and built images (--rmi all)
-docker compose down -v --rmi all --remove-orphans
+# 1. Stop and purge only the demo containers, internal network, and demo volumes:
+docker compose down -v --rmi local --remove-orphans
 
-# 2. (Optional) If running in a Proxmox LXC container and you wish to destroy the entire guest:
-# Run on the Proxmox Host shell:
-pct stop 200
-pct destroy 200
+# 2. (Optional) ONLY if you provisioned a dedicated Proxmox LXC container (e.g. CT ID 200) exclusively for this demo:
+# pct stop 200 && pct destroy 200
 ```
 
 ---
 
-### Teardown C: Google Cloud Run & Cloud SQL
-*Deletes all serverless services, database instances, and artifact images in Google Cloud:*
+### Teardown C: Google Cloud Run & Cloud SQL (Targeted GCP Cleanup)
+*Deletes strictly the demo services created in Playbook C. Other Cloud Run services, Cloud SQL instances, or Artifact Registry repos in your GCP project are completely untouched:*
 ```bash
-export PROJECT_ID="your-gcp-project-id"
-export REGION="us-central1"
+export PROJECT_ID="pradeesi-ai-demo"
+export REGION="europe-west1"
 
-# 1. Delete Cloud Run Services
-gcloud run services delete telecom-mcp-server --region=${REGION} --project=${PROJECT_ID} --quiet
-gcloud run services delete telecom-crm-console --region=${REGION} --project=${PROJECT_ID} --quiet
+# 1. Delete ONLY the two demo Cloud Run services:
+gcloud run services delete telecom-mcp-server \
+    --region=${REGION} \
+    --project=${PROJECT_ID} \
+    --quiet
 
-# 2. Delete Cloud SQL Instance (deletes all databases, users, and automated backups)
-gcloud sql instances delete telecom-pg-instance --project=${PROJECT_ID} --quiet
+gcloud run services delete telecom-crm-console \
+    --region=${REGION} \
+    --project=${PROJECT_ID} \
+    --quiet
 
-# 3. Delete Artifact Registry Repository & Images
-gcloud artifacts repositories delete hybrid-ai-repo --location=${REGION} --project=${PROJECT_ID} --quiet
+# 2. Delete ONLY the demo Cloud SQL instance:
+gcloud sql instances delete telecom-pg-instance \
+    --project=${PROJECT_ID} \
+    --quiet
 
-# 4. (Optional) Delete Secrets from Secret Manager if created
-gcloud secrets delete telecom-mcp-token --project=${PROJECT_ID} --quiet 2>/dev/null || true
+# 3. Delete ONLY the demo Artifact Registry Docker repository:
+gcloud artifacts repositories delete hybrid-ai-repo \
+    --location=${REGION} \
+    --project=${PROJECT_ID} \
+    --quiet
+
+# 4. Delete ONLY the demo Secret if created in Secret Manager:
+gcloud secrets delete telecom-secrets \
+    --project=${PROJECT_ID} \
+    --quiet 2>/dev/null || true
 ```
 
 ---
 
-### Teardown D: Google Kubernetes Engine (GKE)
-*Purges Kubernetes workloads, persistent storage claims, Helm releases, and deletes the GKE cluster:*
+### Teardown D: Google Kubernetes Engine (GKE) (Scoped to Demo Resources)
+*Deletes only the demo pods, services, secrets, and Helm releases. Other workloads and namespaces in your cluster remain intact:*
 ```bash
-export PROJECT_ID="your-gcp-project-id"
-export REGION="us-central1"
-export CLUSTER_NAME="telecom-hybrid-cluster"
-
-# 1. Delete Application Deployments, Services, and Secrets
+# 1. Delete ONLY the demo application deployments and services:
 kubectl delete -f deploy/k8s/deployment.yaml --ignore-not-found
 kubectl delete secret telecom-secrets --ignore-not-found
 
-# 2. Uninstall Helm Releases (Postgres, Prometheus, Grafana, Loki)
+# 2. Uninstall ONLY the demo Helm releases:
 helm uninstall telecom-pg 2>/dev/null || true
 helm uninstall telecom-prom 2>/dev/null || true
 helm uninstall telecom-loki 2>/dev/null || true
 
-# 3. Delete all dynamically provisioned Persistent Volume Claims (PVCs)
-kubectl delete pvc --all
+# 3. Delete ONLY the persistent volume claims created by the demo releases:
+kubectl delete pvc -l app.kubernetes.io/instance=telecom-pg --ignore-not-found
+kubectl delete pvc -l app.kubernetes.io/instance=telecom-prom --ignore-not-found
+kubectl delete pvc -l app.kubernetes.io/instance=telecom-loki --ignore-not-found
 
-# 4. Delete the GKE Cluster (releases all compute instances, load balancers, and node pools)
-gcloud container clusters delete ${CLUSTER_NAME} --region=${REGION} --project=${PROJECT_ID} --quiet
+# 4. Delete ONLY the demo Artifact Registry repository:
+gcloud artifacts repositories delete hybrid-ai-repo \
+    --location=${REGION} \
+    --project=${PROJECT_ID} \
+    --quiet
 
-# 5. Delete Artifact Registry Repository
-gcloud artifacts repositories delete hybrid-ai-repo --location=${REGION} --project=${PROJECT_ID} --quiet
+# 5. (OPTIONAL) ONLY if you created a dedicated GKE cluster exclusively for this demo:
+# gcloud container clusters delete telecom-hybrid-cluster --region=${REGION} --project=${PROJECT_ID} --quiet
 ```
