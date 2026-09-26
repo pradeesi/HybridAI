@@ -101,9 +101,9 @@ async def dashboard(request: Request):
         recent_interactions = inter_res.scalars().all()
 
     return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
+        request=request,
+        name="dashboard.html",
+        context={
             "customers": customers,
             "outages": outages,
             "recent_interactions": recent_interactions,
@@ -156,9 +156,9 @@ async def search_customers(request: Request, q: Optional[str] = None):
         outages = out_res.scalars().all()
 
     return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
+        request=request,
+        name="dashboard.html",
+        context={
             "customers": customers,
             "outages": outages,
             "recent_interactions": [],
@@ -200,9 +200,9 @@ async def customer_360(request: Request, customer_id: str):
     ssn_masked = mask_ssn(customer.ssn)
 
     return templates.TemplateResponse(
-        "customer_detail.html",
-        {
-            "request": request,
+        request=request,
+        name="customer_detail.html",
+        context={
             "customer": customer,
             "phone_masked": phone_masked,
             "ssn_masked": ssn_masked,
