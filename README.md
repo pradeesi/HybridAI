@@ -86,17 +86,25 @@ HybridAI/
 ├── pyproject.toml                             # Standard Python package metadata and dependencies
 ├── requirements.txt                           # Pinned Python requirements
 ├── deploy/                                    # Infrastructure & Observability provisioning manifests
+│   ├── cloudbuild-observability.yaml          # Multi-image Cloud Build manifest for Prometheus, Loki, and Grafana
+│   ├── deploy-cloudrun.sh                     # Automated 1-click deployment script for all 5 Cloud Run services
 │   ├── grafana/
+│   │   ├── Dockerfile                         # Hardened Grafana container with auto-provisioning
 │   │   ├── dashboards/
 │   │   │   ├── telecom_mcp_security.json      # Live audit stream, PII counters, and auth failure dashboard
 │   │   │   └── telecom_operations.json        # AHT optimization, agent queue, and tool latency metrics
 │   │   └── provisioning/
 │   │       ├── dashboards/dashboards.yml      # Automated Grafana dashboard provider definition
-│   │       └── datasources/datasources.yml    # Auto-wired Prometheus and Loki datasources
+│   │       └── datasources/datasources.yml    # Auto-wired Prometheus and Loki datasources with env interpolation
 │   ├── loki/
+│   │   ├── Dockerfile                         # Container definition for Loki log TSDB
 │   │   └── loki-config.yml                    # Grafana Loki 3.0 TSDB storage & HTTP push configuration
 │   └── prometheus/
-│       └── prometheus.yml                     # 5s scrape configs for MCP server and CRM app
+│       ├── Dockerfile                         # Container definition for Prometheus scraper
+│       └── prometheus.yml                     # Scrape configs for MCP server and CRM app (local & cloud)
+├── skills/                                    # Gemini Enterprise App Skills & Playbooks
+│   └── telecom_customer_care_agent/
+│       └── SKILL.md                           # Turn-by-turn interactive Contact Center assistant playbook (No Canvas)
 ├── src/                                       # Core application source code
 │   ├── __init__.py
 │   ├── core/
@@ -736,27 +744,42 @@ For clients supporting SSE transport:
 
 ### 8.1 Contact Center Executive Skill & Operations Playbook (`skills/telecom_customer_care_agent/SKILL.md`)
 
-To bridge backend capabilities with enterprise customer care policies, this repository includes a production-grade **Skill Playbook** located at [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md).
+To bridge backend capabilities with frontline contact center policies, this repository includes a production-grade **Skill Playbook** located at [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md).
 
-#### Why Pair the FastMCP Server with an Operations Skill?
-* **Decoupled Architecture (Capabilities vs. Governance)**:
-  - The **FastMCP Server** provides the *capabilities* (low-level database queries, line attenuation measurements, ONT reboots, and PII masking).
-  - The **Skill Playbook** provides the *governance & empathy* (when to ask for verification, how to sequence diagnostics, goodwill courtesy thresholds, and cross-selling guardrails).
-* **Zero-Downtime Policy & Empathy Tuning**:
-  - Non-technical stakeholders (**Operations Managers, Quality Assurance (QA) Auditors, Compliance Officers, and CX Designers**) can tweak phrasing, empathy standards, or courtesy credit amounts directly in Markdown **without writing code, rebuilding containers, or redeploying Cloud Run**.
-* **Hand-in-Hand Synergy**:
-  - Guides Gemini Enterprise to follow strict SOP phases:
-    1. **Phase 1: Caller Identity Disambiguation** (resolves multiple users with identical names via account/phone confirmation).
-    2. **Phase 2: Diagnostic & Remote Action Flow** (checks area outages *before* rebooting hardware).
-    3. **Phase 3: Billing Dispute & Goodwill Credit** (empowers frontline agents with up to $100 courtesy credits).
-    4. **Phase 4: Contextual Upselling Guardrails** (enforces the "Golden Rule": never upsell to an unhappy customer or during an active outage).
-    5. **Phase 5: Mandatory CRM Logging** (ensures 100% compliance documentation).
+#### Key Design Pillars of the Skill:
+* **Interactive Turn-by-Turn Companion (Human-in-the-Loop)**:
+  - Instead of resolving tickets autonomously in the background, Gemini Enterprise acts as a real-time co-pilot for the human agent.
+  - Executes **at most ONE tool per turn**, presents a concise 2-3 bullet summary, provides a customer-facing script, and **pauses to ask the agent what to do next**.
+* **Strict Zero Canvas / Inline Chat Only Policy**:
+  - Contains explicit negative constraints preventing Gemini Enterprise from activating Canvas or generating standalone file reports. All interaction stays directly inside the active chat stream.
+* **Standardized 3-Part Response Card**:
+  Every response from the assistant follows a clean, scannable format:
+  ```markdown
+  **Status & Findings**:
+  • [1-2 concise bullet points summarizing data retrieved or action taken]
+
+  **Suggested Script for Customer**:
+  > "[1-2 empathetic sentences the human agent can read directly to the caller]"
+
+  **Next Step for Agent**:
+  • [Clear recommendation or question asking the agent how they want to proceed]
+  ```
+* **Decoupled Governance & Zero-Downtime Policy Tuning**:
+  - Non-technical stakeholders (**Operations Managers, Quality Assurance (QA) Auditors, and Compliance Officers**) can tweak customer scripts, courtesy credit thresholds (e.g. `$25` vs `$50`), or empathy guidelines directly in Markdown **without writing code, rebuilding containers, or redeploying Cloud Run**.
+
+#### Turn-by-Turn Workflow Governed by the Skill:
+1. **Step 1: Intake & Search** (`search_customer`): Disambiguates duplicate customer names using Account Number or Postal Code.
+2. **Step 2: Customer 360 Verification** (`get_customer_360`): Surfaces active subscriptions and open tickets upon verification.
+3. **Step 3: Line Diagnostics** (`get_service_diagnostics`): Runs real-time ONT or 5G telemetry (dBm attenuation, packet loss).
+4. **Step 4: Device Remediation** (`restart_ont_modem` / `reprovision_esim_profile`): Triggers remote reboot only after customer gives consent.
+5. **Step 5: Billing & Goodwill Credits** (`calculate_billing_breakdown` / `apply_goodwill_credit`): Audits charges and issues courtesy credits.
+6. **Step 6: CRM Call Wrap-up** (`log_interaction_crm`): Submits structured call notes and resolution status to the database.
 
 #### How to Add This Skill to Gemini Enterprise:
 1. In the **Gemini Enterprise Admin Console**, select your Agent / App.
 2. Navigate to **Agent Configuration / System Instructions / Playbooks**.
 3. Copy the contents of [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md) and paste it into the **System Instructions** or **Agent Playbook** editor.
-4. Save the configuration. Gemini Enterprise will now automatically govern all 8 MCP tools using these operational procedures.
+4. Save the configuration. Gemini Enterprise will now automatically govern all 8 FastMCP tools using this interactive turn-by-turn protocol.
 
 ---
 
