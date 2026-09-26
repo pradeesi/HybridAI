@@ -328,10 +328,11 @@ gcloud services enable run.googleapis.com \
 
 #### 2. Provision Managed Database (Google Cloud SQL for PostgreSQL):
 ```bash
-# 1. Create a Cloud SQL PostgreSQL 16 instance
+# 1. Create a Cloud SQL PostgreSQL 16 instance (Enterprise Edition)
 gcloud sql instances create telecom-pg-instance \
     --database-version=POSTGRES_16 \
-    --tier=db-f1-micro \
+    --edition=ENTERPRISE \
+    --tier=db-custom-1-3840 \
     --region=${REGION} \
     --root-password="telecom_secure_pass"
 
