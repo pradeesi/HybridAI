@@ -5,7 +5,7 @@ Dependencies/Side Effects: Connects to PostgreSQL via asyncpg with defensive SQL
 """
 
 import logging
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import (
     AsyncSession, async_sessionmaker, create_async_engine
 )
@@ -14,26 +14,82 @@ from src.db.models import Base
 
 logger = logging.getLogger("hybrid_ai.database")
 
-# Primary engine initialization
+class SessionFactoryProxy:
+    """
+    Summary:
+        Dynamic callable proxy for SQLAlchemy async_sessionmaker.
+        Ensures all modules importing AsyncSessionLocal transparently route to the active
+        engine (PostgreSQL or SQLite fallback) even if reconfigured during application lifespan.
+    """
+
+    def __init__(self) -> None:
+        """
+        Summary:
+            Initializes the proxy without an underlying sessionmaker.
+        """
+        self._sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+
+    def configure(self, sessionmaker: async_sessionmaker[AsyncSession]) -> None:
+        """
+        Summary:
+            Updates the underlying sessionmaker reference.
+
+        Parameters:
+            sessionmaker (async_sessionmaker[AsyncSession]): Configured SQLAlchemy session factory.
+        """
+        self._sessionmaker = sessionmaker
+
+    def __call__(self, *args, **kwargs) -> AsyncSession:
+        """
+        Summary:
+            Invokes the active sessionmaker to yield an AsyncSession.
+
+        Return Value:
+            AsyncSession: Fresh asynchronous SQLAlchemy session.
+
+        Exceptions/Errors:
+            RuntimeError: If called before configure() has set an active sessionmaker.
+        """
+        if self._sessionmaker is None:
+            raise RuntimeError("Database session factory has not been initialized.")
+        return self._sessionmaker(*args, **kwargs)
+
+
+# Global singleton proxy instance
+AsyncSessionLocal = SessionFactoryProxy()
+
+# Initialize primary database engine
 database_url = settings.DATABASE_URL
 
-# Provide defensive fallback to sqlite if running standalone without postgres container
-if "postgresql" in database_url and "localhost" in database_url:
-    # We will attempt connection; if failed during init_db, fallback to sqlite
-    pass
+# Defensive check: if Cloud SQL host socket is empty (e.g. ?host=/cloudsql/ or ?host=/cloudsql)
+# default directly to SQLite to avoid socket connection timeouts
+if "?host=/cloudsql/" in database_url or database_url.endswith("/cloudsql/") or database_url.endswith("/cloudsql"):
+    logger.warning(
+        "Detected unpopulated Cloud SQL instance socket path in DATABASE_URL. "
+        "Switching immediately to local SQLite fallback."
+    )
+    database_url = "sqlite+aiosqlite:///./telecom_local.db"
 
-engine = create_async_engine(
-    database_url,
-    echo=settings.DEBUG,
-    future=True,
-    pool_pre_ping=True
-)
+try:
+    engine = create_async_engine(
+        database_url,
+        echo=settings.DEBUG,
+        future=True,
+        pool_pre_ping=True
+    )
+except Exception as exc:
+    logger.warning("Failed to create engine with %s (%s). Using SQLite.", database_url, exc)
+    database_url = "sqlite+aiosqlite:///./telecom_local.db"
+    engine = create_async_engine(database_url, echo=settings.DEBUG)
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
+# Configure proxy with initial sessionmaker
+AsyncSessionLocal.configure(
+    async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False
+    )
 )
 
 
@@ -64,7 +120,7 @@ async def init_db() -> None:
     Exceptions/Errors:
         Logs connection errors and switches engine cleanly.
     """
-    global engine, AsyncSessionLocal
+    global engine
 
     try:
         async with engine.begin() as conn:
@@ -78,11 +134,13 @@ async def init_db() -> None:
         )
         sqlite_url = "sqlite+aiosqlite:///./telecom_local.db"
         engine = create_async_engine(sqlite_url, echo=settings.DEBUG)
-        AsyncSessionLocal = async_sessionmaker(
-            bind=engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-            autoflush=False
+        AsyncSessionLocal.configure(
+            async_sessionmaker(
+                bind=engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False
+            )
         )
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

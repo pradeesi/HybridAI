@@ -282,9 +282,12 @@ def run():
     """
     Summary:
         CLI runner for launching the CRM console standalone.
+        Dynamically respects the PORT environment variable assigned by Cloud Run or container orchestrators.
     """
+    import os
     import uvicorn
-    uvicorn.run("src.crm.app:app", host="0.0.0.0", port=settings.CRM_PORT, reload=False)
+    port = int(os.environ.get("PORT", settings.PORT or settings.CRM_PORT))
+    uvicorn.run("src.crm.app:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

@@ -22,16 +22,17 @@ async def seed_synthetic_telecom_data() -> None:
         Seeds comprehensive, realistic telecom synthetic data for call center scenarios.
         Idempotent: Only seeds if the Customer table is currently empty.
     """
-    async with AsyncSessionLocal() as session:
-        # Check existing records count
-        result = await session.execute(select(func.count(Customer.id)))
-        count = result.scalar() or 0
+    try:
+        async with AsyncSessionLocal() as session:
+            # Check existing records count
+            result = await session.execute(select(func.count(Customer.id)))
+            count = result.scalar() or 0
 
-        if count > 0:
-            logger.info("Database already contains %d customer records. Skipping seeding.", count)
-            return
+            if count > 0:
+                logger.info("Database already contains %d customer records. Skipping seeding.", count)
+                return
 
-        logger.info("Seeding synthetic telecom database with rich scenario personas...")
+            logger.info("Seeding synthetic telecom database with rich scenario personas...")
 
         # -------------------------------------------------------------
         # 1. CATALOG: UPSELL OFFERS
@@ -354,3 +355,8 @@ async def seed_synthetic_telecom_data() -> None:
 
         await session.commit()
         logger.info("Successfully seeded synthetic personas, accounts, devices, and catalog offers.")
+    except Exception as exc:
+        logger.warning(
+            "Encountered unexpected non-fatal exception during synthetic data seeding (%s). Continuing startup...",
+            exc
+        )

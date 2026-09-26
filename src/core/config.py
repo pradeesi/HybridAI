@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # Network Ports
+    PORT: Optional[int] = None
     CRM_PORT: int = 8000
     MCP_PORT: int = 8001
 

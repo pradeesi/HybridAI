@@ -341,7 +341,14 @@ gcloud projects add-iam-policy-binding ${PROJECT_ID} \
     --role="roles/logging.logWriter"
 ```
 
-#### 2. Provision Managed Database (Google Cloud SQL for PostgreSQL):
+#### 2. Choose Your Database Strategy (Option A: Standalone vs. Option B: Cloud SQL)
+
+##### Option A: Fast Standalone Demo (Recommended — Zero DB Provisioning & Zero Extra Cloud Cost)
+*The platform includes an embedded SQLite database engine with all 4 telecom personas pre-seeded. No Cloud SQL setup or additional infrastructure cost is needed.*
+*(Skip directly to Step 3 below!)*
+
+##### Option B: Enterprise Cloud SQL for PostgreSQL 16 (Production Grade)
+*If you wish to use a fully managed PostgreSQL instance in GCP:*
 ```bash
 # 1. Create a Cloud SQL PostgreSQL 16 instance (Enterprise Edition)
 gcloud sql instances create telecom-pg-instance \
@@ -355,10 +362,12 @@ gcloud sql instances create telecom-pg-instance \
 gcloud sql databases create telecom_db --instance=telecom-pg-instance
 gcloud sql users create telecom_user --instance=telecom-pg-instance --password="telecom_secure_pass"
 
-# 3. Retrieve the Cloud SQL Instance Connection Name
-INSTANCE_CONNECTION_NAME=$(gcloud sql instances describe telecom-pg-instance --format='value(connectionName)')
+# 3. Retrieve and export the Cloud SQL Instance Connection Name:
+export INSTANCE_CONNECTION_NAME=$(gcloud sql instances describe telecom-pg-instance --format='value(connectionName)')
 echo "Cloud SQL Connection Name: ${INSTANCE_CONNECTION_NAME}"
 ```
+
+---
 
 #### 3. Build & Push Image to Google Artifact Registry:
 ```bash
@@ -372,17 +381,35 @@ gcloud artifacts repositories create hybrid-ai-repo \
 git clone https://github.com/pradeesi/HybridAI.git
 cd HybridAI
 
-# 3. Build and submit container image via Cloud Build (must be run from inside HybridAI folder)
+# 3. Build and submit container image via Cloud Build (run from inside HybridAI folder):
 gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest .
 ```
 
+---
+
 #### 4. Deploy FastMCP Server to Cloud Run:
+
+**For Option A (Standalone Demo — No Cloud SQL):**
 ```bash
 gcloud run deploy telecom-mcp-server \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
     --platform managed \
     --region ${REGION} \
-    --command "python3,-m,src.mcp.server" \
+    --command "python3" \
+    --args "-m,src.mcp.server" \
+    --port 8001 \
+    --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987" \
+    --allow-unauthenticated
+```
+
+**For Option B (With Managed Cloud SQL):**
+```bash
+gcloud run deploy telecom-mcp-server \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+    --platform managed \
+    --region ${REGION} \
+    --command "python3" \
+    --args "-m,src.mcp.server" \
     --port 8001 \
     --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
     --set-env-vars APP_ENV=production,MCP_PORT=8001,MCP_AUTH_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987",DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
@@ -390,16 +417,30 @@ gcloud run deploy telecom-mcp-server \
 ```
 *Note the generated HTTPS URL (e.g. `https://telecom-mcp-server-xyz-uc.a.run.app`). The SSE endpoint will be `https://telecom-mcp-server-xyz-uc.a.run.app/sse`.*
 
+---
+
 #### 5. Deploy CRM Agent Console to Cloud Run:
+
+**For Option A (Standalone Demo — No Cloud SQL):**
 ```bash
 gcloud run deploy telecom-crm-console \
     --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
     --platform managed \
     --region ${REGION} \
-    --command "python3,-m,src.crm.app" \
+    --port 8000 \
+    --set-env-vars APP_ENV=production,CRM_PORT=8000 \
+    --allow-unauthenticated
+```
+
+**For Option B (With Managed Cloud SQL):**
+```bash
+gcloud run deploy telecom-crm-console \
+    --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest \
+    --platform managed \
+    --region ${REGION} \
     --port 8000 \
     --add-cloudsql-instances ${INSTANCE_CONNECTION_NAME} \
-    --set-env-vars APP_ENV=production,CRM_PORT=8000,MCP_PORT=8001,DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
+    --set-env-vars APP_ENV=production,CRM_PORT=8000,DATABASE_URL="postgresql+asyncpg://telecom_user:telecom_secure_pass@/telecom_db?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
     --allow-unauthenticated
 ```
 
