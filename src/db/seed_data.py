@@ -19,7 +19,7 @@ logger = logging.getLogger("hybrid_ai.seed")
 async def seed_synthetic_telecom_data() -> None:
     """
     Summary:
-        Seeds comprehensive, realistic telecom synthetic data for call center scenarios.
+        Seeds comprehensive, realistic telecom synthetic data for contact center scenarios.
         Idempotent: Only seeds if the Customer table is currently empty.
     """
     try:

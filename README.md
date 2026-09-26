@@ -8,7 +8,7 @@
 
 An enterprise-grade, containerized Telecom Customer Care platform replicating real-world telecommunications frontline operations (Home Broadband, Mobile 5G, Billing Disputes, Line Diagnostics, and Proactive Upselling). 
 
-Exposes a hardened **FastMCP (Server-Sent Events)** server consumed by the **Google Gemini Enterprise App (GE App)** to assist human call center agents in real time while minimizing Average Handle Time (AHT).
+Exposes a hardened **FastMCP (Server-Sent Events)** server consumed by the **Google Gemini Enterprise App (GE App)** to assist human contact center agents in real time while minimizing Average Handle Time (AHT).
 
 Built with **Python 3.11+ (FastAPI)**, **Jinja2**, **HTML5**, **locally stored Bootstrap 5** (zero external CDN dependencies), **PostgreSQL 16** (with automatic local SQLite fallback), and a full observability suite (**Prometheus**, **Grafana Loki**, and **Grafana**).
 
@@ -23,7 +23,7 @@ The platform supports a synchronized **Dual-Pane Agent Workflow**:
 
 ```mermaid
 graph TD
-    subgraph AgentWorkstation["Call Center Executive Workstation"]
+    subgraph AgentWorkstation["Contact Center Executive Workstation"]
         Agent["Human Frontline Agent (Voice / Screen)"]
         CRM_UI["Telecom CRM Console (Port 8000)"]
         GE_App["Google Gemini Enterprise App"]
@@ -222,7 +222,7 @@ Choose the playbook that fits your target environment:
 - **PostgreSQL 16 (`postgres:16-alpine`)**: Containerized database engine with persistent volume (`pg_data`) and automatic synthetic data bootstrapping.
 - **Prometheus 2.50+ (`prom/prometheus:v2.50.1`)**: Automated metrics scraper pre-configured with [`deploy/prometheus/prometheus.yml`](deploy/prometheus/prometheus.yml).
 - **Grafana Loki 3.0+ (`grafana/loki:3.0.0`)**: Centralized TSDB log engine pre-configured with [`deploy/loki/loki-config.yml`](deploy/loki/loki-config.yml).
-- **Grafana 10.4+ (`grafana/grafana:10.4.0`)**: Pre-provisioned with Prometheus & Loki datasources and auto-loaded Security Audit & Call Center Ops dashboards.
+- **Grafana 10.4+ (`grafana/grafana:10.4.0`)**: Pre-provisioned with Prometheus & Loki datasources and auto-loaded Security Audit & Contact Center Ops dashboards.
 
 ---
 
@@ -639,10 +639,10 @@ For clients supporting SSE transport:
 > [!NOTE]
 > **Customer Disambiguation & Identity Verification**:
 > In enterprise telecom environments, multiple subscribers often share identical names (e.g. multiple "David Chen"s). The `search_customer` tool is designed to support both natural-language disambiguation and unique identifier lookups:
-> - **Multi-Match Handling**: If a name search returns multiple matches, the tool returns all candidate records with masked PII (`phone_masked`, `postal_code`, `accounts`). Gemini Enterprise will present the candidates to the call center agent to confirm the caller's identity.
+> - **Multi-Match Handling**: If a name search returns multiple matches, the tool returns all candidate records with masked PII (`phone_masked`, `postal_code`, `accounts`). Gemini Enterprise will present the candidates to the contact center agent to confirm the caller's identity.
 > - **Direct Disambiguated Search**: Prompts can specify the **Account Number**, **Phone Number**, or **Billing Postal Code** for 100% deterministic lookup.
 
-#### Synthetic Persona Reference Card for Call Center Testing:
+#### Synthetic Persona Reference Card for Contact Center Testing:
 | Subscriber Name | Account Number | Phone Number | Postal Code | Scenario Trigger |
 | :--- | :--- | :--- | :--- | :--- |
 | **Elena Rostova** | `TEL-ACC-88129` | `+1 (555) 234-5678` | `97477` | Optical line attenuation (-28.5 dBm) & ONT reboot |
@@ -694,7 +694,7 @@ For clients supporting SSE transport:
 
 ---
 
-### 8.1 Call Center Executive Skill & Operations Playbook (`skills/telecom_customer_care_agent/SKILL.md`)
+### 8.1 Contact Center Executive Skill & Operations Playbook (`skills/telecom_customer_care_agent/SKILL.md`)
 
 To bridge backend capabilities with enterprise customer care policies, this repository includes a production-grade **Skill Playbook** located at [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md).
 

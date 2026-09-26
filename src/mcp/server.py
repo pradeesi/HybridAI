@@ -77,7 +77,7 @@ async def verify_auth_token(
         x_mcp_token (Optional[str]): Dedicated MCP auth header.
         x_serverless_auth (Optional[str]): Serverless proxy authorization header.
         x_goog_user_email (Optional[str]): Google IAP authenticated user header.
-        x_agent_identity (Optional[str]): Custom call center agent identity header.
+        x_agent_identity (Optional[str]): Custom contact center agent identity header.
 
     Return Value:
         str: Resolved caller identity (e.g. 'sarah.jenkins@telecom.com').

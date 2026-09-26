@@ -11,7 +11,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 200,
-      "title": "Telecom Call Center Agent Performance & AHT Optimization",
+      "title": "Telecom Contact Center Agent Performance & AHT Optimization",
       "type": "row"
     },
     {
@@ -174,7 +174,7 @@
   "tags": ["telecom", "crm", "operations", "aht"],
   "time": { "from": "now-1h", "to": "now" },
   "timezone": "browser",
-  "title": "Telecom Call Center Operations & Performance",
+  "title": "Telecom Contact Center Operations & Performance",
   "uid": "telecom-operations",
   "version": 1
 }

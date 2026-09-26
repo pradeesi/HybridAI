@@ -1,6 +1,6 @@
 """
 Purpose: Customer Care CRM Frontline Agent Console (FastAPI + Jinja2 + Local Bootstrap 5).
-Architecture/Context: Visual interface rendered on the call center executive's workstation alongside Gemini Enterprise App.
+Architecture/Context: Visual interface rendered on the contact center executive's workstation alongside Gemini Enterprise App.
 Dependencies/Side Effects: Serves local static assets, queries database models, interacts with remote device actions and Loki audit logger.
 """
 

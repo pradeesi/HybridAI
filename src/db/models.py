@@ -165,7 +165,7 @@ class SupportTicket(Base):
 class CallInteraction(Base):
     """
     Summary:
-        Call center agent interaction audit log.
+        Contact center agent interaction audit log.
     """
     __tablename__ = "call_interactions"
 
