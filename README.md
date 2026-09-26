@@ -442,6 +442,55 @@ gcloud run deploy telecom-crm-console \
     --allow-unauthenticated
 ```
 
+#### 6. Verify Deployments & Access the CRM Console:
+
+##### A. Configure Invoker IAM Permissions
+Depending on your Google Cloud organization's security policy:
+- **If your project allows public access:**
+  ```bash
+  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="allUsers" --role="roles/run.invoker"
+  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="allUsers" --role="roles/run.invoker"
+  ```
+- **If your organization enforces Domain Restricted Sharing (e.g. `pradeesi.altostrat.com`):**
+  ```bash
+  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="domain:pradeesi.altostrat.com" --role="roles/run.invoker"
+  gcloud run services add-iam-policy-binding telecom-crm-console --region=${REGION} --member="user:$(gcloud config get-value account)" --role="roles/run.invoker"
+
+  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="domain:pradeesi.altostrat.com" --role="roles/run.invoker"
+  gcloud run services add-iam-policy-binding telecom-mcp-server --region=${REGION} --member="user:$(gcloud config get-value account)" --role="roles/run.invoker"
+  ```
+
+##### B. Access the CRM Console in Your Browser
+- **Option 1 (Direct URL if public):** Open the URL returned by `gcloud run services describe telecom-crm-console --region=${REGION} --format='value(status.url)'`.
+- **Option 2 (Cloud Run Authenticated Proxy — Works in all environments including domain-restricted orgs):**
+  ```bash
+  # Proxies the Cloud Run service locally with automated GCP authentication:
+  gcloud run services proxy telecom-crm-console --region=${REGION} --port=8080
+  ```
+  Open `http://localhost:8080` in your web browser or Cloud Shell Web Preview to explore the Frontline CRM dashboard.
+
+##### C. Verify Endpoints via CLI
+```bash
+TOKEN=$(gcloud auth print-identity-token)
+CRM_URL=$(gcloud run services describe telecom-crm-console --region=${REGION} --format='value(status.url)')
+MCP_URL=$(gcloud run services describe telecom-mcp-server --region=${REGION} --format='value(status.url)')
+
+# 1. Verify CRM Console Health
+curl -s -H "Authorization: Bearer ${TOKEN}" "${CRM_URL}/health"
+# Returns: {"status":"healthy","service":"telecom-crm-console"}
+
+# 2. Verify FastMCP Server Health
+curl -s -H "Authorization: Bearer ${TOKEN}" "${MCP_URL}/health"
+# Returns: {"status":"healthy","service":"telecom-mcp-server","version":"1.0.0"}
+
+# 3. Test MCP Tool Execution (search_customer)
+curl -s -X POST "${MCP_URL}/execute" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "X-MCP-Token: telecom-mcp-secret-token-change-in-prod-xyz987" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "search_customer", "arguments": {"query": "Elena"}}' | jq .
+```
+
 ---
 
 ### Playbook D: Google Kubernetes Engine (GKE)
