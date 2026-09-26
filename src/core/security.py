@@ -45,8 +45,33 @@ def validate_bearer_token(auth_header: Optional[str]) -> bool:
         return False
 
     token = parts[1]
-    # Use constant-time comparison to prevent timing attacks
     is_valid = secrets.compare_digest(token, settings.MCP_AUTH_TOKEN)
+    if not is_valid:
+        AUTH_FAILURES_COUNTER.inc()
+    return is_valid
+
+
+def validate_token(token: Optional[str]) -> bool:
+    """
+    Summary:
+        Validates a raw or Bearer-prefixed secret token using constant-time comparison.
+        Accommodates both standard Authorization headers and custom X-MCP-Token headers.
+
+    Parameters:
+        token (Optional[str]): Secret token or 'Bearer <token>' string.
+
+    Return Value:
+        bool: True if authorized, False otherwise.
+    """
+    if not token:
+        AUTH_FAILURES_COUNTER.inc()
+        return False
+
+    cleaned = token.strip()
+    if cleaned.lower().startswith("bearer "):
+        cleaned = cleaned[7:].strip()
+
+    is_valid = secrets.compare_digest(cleaned, settings.MCP_AUTH_TOKEN)
     if not is_valid:
         AUTH_FAILURES_COUNTER.inc()
     return is_valid

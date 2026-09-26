@@ -16,7 +16,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.core.audit import audit_client
 from src.core.config import settings
-from src.core.security import validate_bearer_token
+from src.core.security import validate_bearer_token, validate_token
 from src.db.database import init_db
 from src.db.seed_data import seed_synthetic_telecom_data
 from src.mcp.tools import (
@@ -56,13 +56,19 @@ app = FastAPI(
 
 
 # Security Dependency
-async def verify_auth_token(authorization: Optional[str] = Header(None)) -> str:
+async def verify_auth_token(
+    authorization: Optional[str] = Header(None),
+    x_mcp_token: Optional[str] = Header(None, alias="X-MCP-Token")
+) -> str:
     """
     Summary:
         FastAPI dependency enforcing strict Bearer token authentication.
+        Supports both Authorization: Bearer <token> and custom X-MCP-Token: <token> headers
+        (useful when deployed behind Google Cloud IAM authentication proxies).
 
     Parameters:
         authorization (Optional[str]): Incoming Authorization header.
+        x_mcp_token (Optional[str]): Dedicated MCP auth header.
 
     Return Value:
         str: Validated token.
@@ -70,20 +76,20 @@ async def verify_auth_token(authorization: Optional[str] = Header(None)) -> str:
     Exceptions/Errors:
         HTTPException(401): If token is missing, malformed, or invalid.
     """
-    if not validate_bearer_token(authorization):
+    if not (validate_token(x_mcp_token) or validate_bearer_token(authorization)):
         await audit_client.log_event(
             event_type="UNAUTHORIZED_ACCESS_ATTEMPT",
             caller_identity="unknown",
             tool_name="AUTH_GATEWAY",
             status="DENIED",
-            details={"reason": "Invalid or missing Bearer token"}
+            details={"reason": "Invalid or missing Bearer/MCP token"}
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing Authorization Bearer token.",
+            detail="Invalid or missing Authorization Bearer or X-MCP-Token.",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    return authorization
+    return x_mcp_token or authorization
 
 
 # Tool Catalog Definition (MCP Specification standard)
@@ -246,13 +252,17 @@ async def execute_tool(request: Request, auth: str = Depends(verify_auth_token))
 
 
 @app.get("/sse")
-async def mcp_sse_stream(request: Request, authorization: Optional[str] = Header(None)):
+async def mcp_sse_stream(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_mcp_token: Optional[str] = Header(None, alias="X-MCP-Token")
+):
     """
     Summary:
         Server-Sent Events (SSE) transport endpoint implementing MCP stream connectivity.
         Authenticates incoming SSE requests and keeps a live persistent stream open.
     """
-    if not validate_bearer_token(authorization):
+    if not (validate_token(x_mcp_token) or validate_bearer_token(authorization)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized MCP SSE connection.",
