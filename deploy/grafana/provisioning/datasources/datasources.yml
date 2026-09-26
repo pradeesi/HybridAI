@@ -1,0 +1,20 @@
+# Purpose: Auto-provisioning datasources for Prometheus and Loki in Grafana.
+# Architecture/Context: Ensures Grafana boots with pre-wired metrics and logging backends.
+# Dependencies/Side Effects: Connects to internal docker network services 'prometheus' and 'loki'.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: true

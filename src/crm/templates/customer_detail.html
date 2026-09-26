@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}{{ customer.first_name }} {{ customer.last_name }} - Customer 360{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Customer Header Card -->
+  <div class="col-12">
+    <div class="card card-elevated bg-white p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4" style="width: 54px; height: 54px;">
+            {{ customer.first_name[0] }}{{ customer.last_name[0] }}
+          </div>
+          <div>
+            <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">
+              {{ customer.first_name }} {{ customer.last_name }}
+              <span class="badge {% if customer.loyalty_tier == 'Platinum' %}bg-primary{% elif customer.loyalty_tier == 'Gold' %}bg-warning text-dark{% else %}bg-secondary{% endif %} fs-6">
+                {{ customer.loyalty_tier }} Member
+              </span>
+            </h4>
+            <div class="text-muted small mt-1">
+              <span class="me-3"><i class="bi bi-envelope"></i> {{ customer.email }}</span>
+              <span class="me-3"><i class="bi bi-telephone"></i> <strong class="telemetry-pill">{{ phone_masked }}</strong></span>
+              <span class="me-3"><i class="bi bi-geo-alt"></i> {{ customer.city }}, {{ customer.state }} ({{ customer.postal_code }})</span>
+              <span><i class="bi bi-shield-lock"></i> SSN: {{ ssn_masked }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Call Timer Counter -->
+        <div class="d-flex align-items-center gap-3">
+          <div class="text-end">
+            <span class="badge bg-danger d-inline-flex align-items-center gap-1 px-3 py-2 fs-6">
+              <i class="bi bi-telephone-fill"></i> Live Call: <span id="callTimer">00:00</span>
+            </span>
+            <div class="text-muted small mt-1">Target AHT: &lt; 240 seconds</div>
+          </div>
+          <a href="/" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Queue
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left Column: Active Subscriptions & Diagnostics -->
+  <div class="col-lg-8">
+    <!-- Active Services Section -->
+    <div class="card card-elevated bg-white mb-4">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-hdd-network text-primary"></i> Subscriptions & Active Services
+        </h5>
+      </div>
+      <div class="card-body">
+        {% for acc in customer.accounts %}
+          <div class="mb-3 p-3 bg-light rounded border">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-bold">Billing Account: {{ acc.account_number }}</span>
+              <div>
+                <span class="badge bg-success-subtle text-success border border-success me-2">{{ acc.status }}</span>
+                <span class="small text-muted">Card: <code>{{ acc.payment_method_card[-4:] }}</code></span>
+                <span class="fw-bold ms-2">Balance: ${{ "%.2f"|format(acc.balance_amount) }}</span>
+              </div>
+            </div>
+
+            {% for sub in acc.subscriptions %}
+            <div class="card bg-white border mt-2 p-3">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="mb-1 fw-bold text-dark">
+                    <i class="bi {% if sub.service_type == 'HOME_BROADBAND' %}bi-router{% else %}bi-phone{% endif %} text-primary me-1"></i>
+                    {{ sub.plan_name }}
+                  </h6>
+                  <span class="badge {% if sub.status == 'ACTIVE' %}bg-success{% elif sub.status == 'THROTTLED' %}bg-danger{% else %}bg-warning{% endif %}">
+                    {{ sub.status }}
+                  </span>
+                  <span class="text-muted small ms-2">Speed Tier: {{ sub.speed_tier_mbps }} Mbps</span>
+                </div>
+                <div class="text-end">
+                  <div class="fw-bold text-primary fs-5">${{ "%.2f"|format(sub.monthly_fee) }}<span class="small text-muted">/mo</span></div>
+                </div>
+              </div>
+
+              <!-- Data Usage Indicator -->
+              <div class="mt-3">
+                <div class="d-flex justify-content-between small mb-1">
+                  <span>Data Consumption: <strong>{{ "%.1f"|format(sub.current_usage_gb) }} GB</strong></span>
+                  <span>Cap: <strong>{% if sub.data_cap_gb > 0 %}{{ "%.0f"|format(sub.data_cap_gb) }} GB{% else %}Unlimited{% endif %}</strong></span>
+                </div>
+                {% if sub.data_cap_gb > 0 %}
+                  {% set usage_pct = (sub.current_usage_gb / sub.data_cap_gb * 100)|round %}
+                  <div class="progress" style="height: 8px;">
+                    <div class="progress-bar {% if usage_pct >= 100 %}bg-danger{% elif usage_pct > 80 %}bg-warning{% else %}bg-primary{% endif %}" 
+                         role="progressbar" style="width: {{ [usage_pct, 100]|min }}%;"></div>
+                  </div>
+                  {% if usage_pct >= 100 %}
+                    <small class="text-danger fw-bold mt-1 d-block">
+                      <i class="bi bi-exclamation-octagon-fill"></i> Data cap exceeded. Line throttled to 128kbps!
+                    </small>
+                  {% endif %}
+                {% else %}
+                  <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" style="width: 100%;"></div>
+                  </div>
+                {% endif %}
+              </div>
+
+              <!-- Hardware Devices & Live Diagnostics -->
+              <div class="mt-3 border-top pt-3">
+                <h6 class="small fw-bold text-uppercase text-secondary mb-2">Connected Hardware & Live Line Diagnostics</h6>
+                {% for dev in sub.devices %}
+                <div class="p-2 rounded bg-light border mb-2">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>{{ dev.device_type }}</strong> (S/N: <code>{{ dev.serial_number }}</code>)
+                      <span class="badge {% if dev.health_status == 'HEALTHY' %}bg-success{% elif dev.health_status == 'DEGRADED' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
+                        {{ dev.health_status }}
+                      </span>
+                    </div>
+                    <!-- Remote Action Buttons -->
+                    <div class="btn-group btn-group-sm">
+                      <form action="/devices/{{ dev.id }}/action" method="POST" class="d-inline">
+                        <input type="hidden" name="action" value="reboot">
+                        <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
+                          <i class="bi bi-arrow-repeat"></i> Remote Reboot
+                        </button>
+                      </form>
+                      <form action="/devices/{{ dev.id }}/action" method="POST" class="d-inline ms-1">
+                        <input type="hidden" name="action" value="channel_optimization">
+                        <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                        <button type="submit" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1">
+                          <i class="bi bi-broadcast"></i> Optimize Wi-Fi
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <!-- Telemetry Metrics Grid -->
+                  <div class="row g-2 mt-2 font-monospace small">
+                    {% if dev.live_telemetry %}
+                      {% for k, v in dev.live_telemetry.items() %}
+                      <div class="col-6 col-md-3">
+                        <div class="bg-white p-1 rounded border text-center">
+                          <div class="text-muted" style="font-size: 0.7rem;">{{ k }}</div>
+                          <div class="fw-bold {% if 'optical_rx' in k and v < -27 %}text-danger{% elif 'packet_loss' in k and v > 5 %}text-danger{% else %}text-dark{% endif %}">
+                            {{ v }}
+                          </div>
+                        </div>
+                      </div>
+                      {% endfor %}
+                    {% endif %}
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Billing & Disputes -->
+    <div class="card card-elevated bg-white">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-credit-card text-primary"></i> Billing History & Invoices
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light small">
+              <tr>
+                <th>Cycle</th>
+                <th>Base Charges</th>
+                <th>Roaming</th>
+                <th>Taxes</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Dispute Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for acc in customer.accounts %}
+                {% for b in acc.billing_records %}
+                <tr>
+                  <td>{{ b.invoice_month }}</td>
+                  <td>${{ "%.2f"|format(b.base_charges) }}</td>
+                  <td>
+                    {% if b.roaming_charges > 0 %}
+                      <span class="text-danger fw-bold">+${{ "%.2f"|format(b.roaming_charges) }}</span>
+                    {% else %}
+                      $0.00
+                    {% endif %}
+                  </td>
+                  <td>${{ "%.2f"|format(b.taxes) }}</td>
+                  <td class="fw-bold">${{ "%.2f"|format(b.total_amount) }}</td>
+                  <td>
+                    <span class="badge {% if b.payment_status == 'PAID' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                      {{ b.payment_status }}
+                    </span>
+                  </td>
+                  <td class="small">
+                    {% if b.dispute_status != 'NONE' %}
+                      <span class="badge bg-danger">{{ b.dispute_status }}</span>
+                      <span class="text-muted d-block">{{ b.dispute_notes }}</span>
+                    {% else %}
+                      <span class="text-muted">None</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Upsell Engine & Call Logging -->
+  <div class="col-lg-4">
+    <!-- Gemini Enterprise Copilot Assistant Helper -->
+    <div class="card card-elevated bg-primary text-white mb-4">
+      <div class="card-body">
+        <h6 class="fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-lightning-charge-fill"></i> Gemini Enterprise Copilot Assist
+        </h6>
+        <p class="small mb-2">
+          Paste this query in your GE App window to instantly trigger remote diagnosis:
+        </p>
+        <div class="p-2 bg-dark rounded font-monospace small user-select-all" style="font-size: 0.78rem;">
+          Customer {{ customer.first_name }} {{ customer.last_name }} (ID: {{ customer.id }}) is experiencing service issues. Run get_service_diagnostics and check for outages in postal code {{ customer.postal_code }}.
+        </div>
+      </div>
+    </div>
+
+    <!-- Targeted Upsell Recommendations -->
+    <div class="card card-elevated bg-white mb-4">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-gift text-success"></i> Tailored Upsell Offers
+        </h5>
+      </div>
+      <div class="card-body">
+        {% if upsell_offers %}
+          {% for off in upsell_offers %}
+          <div class="p-3 bg-light rounded border border-success-subtle mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong class="text-success">{{ off.title }}</strong>
+              <span class="badge bg-success">${{ "%.2f"|format(off.promotional_price) }}/mo</span>
+            </div>
+            <p class="small text-muted mb-2">{{ off.description }}</p>
+            <div class="p-2 bg-white rounded border small mb-2">
+              <strong>Agent Script:</strong>
+              <em class="d-block text-secondary mt-1">"{{ off.pitch_script }}"</em>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="small text-muted mb-0">No active promotional upsell triggered for current plan.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Call Completion & Note Logging -->
+    <div class="card card-elevated bg-white">
+      <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-journal-check text-primary"></i> Complete & Log Interaction
+        </h5>
+      </div>
+      <div class="card-body">
+        <form action="/customers/{{ customer.id }}/log_interaction" method="POST">
+          <input type="hidden" name="call_duration_sec" id="durationInput" value="120">
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Agent Name / ID</label>
+            <input type="text" name="agent_name" class="form-control form-control-sm" value="Frontline-Agent-4082" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Customer Issue Summary</label>
+            <textarea name="issue_summary" class="form-control form-control-sm" rows="2" placeholder="e.g., Optical degradation causing buffer" required></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Resolution & Actions Taken</label>
+            <textarea name="resolution_summary" class="form-control form-control-sm" rows="2" placeholder="e.g., Initiated remote ONT reboot and scheduled field inspection" required></textarea>
+          </div>
+
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="upsell_offered" id="upsellOffered">
+            <label class="form-check-label small" for="upsellOffered">Upsell Offer Pitched</label>
+          </div>
+
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" name="upsell_accepted" id="upsellAccepted">
+            <label class="form-check-label small" for="upsellAccepted">Customer Accepted Upgrade</label>
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2">
+            <i class="bi bi-check-circle-fill"></i> Save Call Log & Close Ticket
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Simple live timer for call handling
+  let seconds = 0;
+  const timerElement = document.getElementById('callTimer');
+  const durationInput = document.getElementById('durationInput');
+
+  setInterval(() => {
+    seconds++;
+    const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const secs = String(seconds % 60).padStart(2, '0');
+    timerElement.textContent = `${mins}:${secs}`;
+    durationInput.value = seconds;
+  }, 1000);
+</script>
+{% endblock %}

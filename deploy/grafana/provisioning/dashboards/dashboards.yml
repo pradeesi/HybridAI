@@ -1,0 +1,15 @@
+# Purpose: Dashboard provider configuration for Grafana.
+# Architecture/Context: Automatically loads pre-built Telecom JSON dashboards upon startup.
+# Dependencies/Side Effects: Scans /var/lib/grafana/dashboards for JSON files.
+
+apiVersion: 1
+
+providers:
+  - name: "Telecom HybridAI Dashboards"
+    orgId: 1
+    folder: "Telecom Platform"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

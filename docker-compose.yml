@@ -1,0 +1,140 @@
+# Purpose: Multi-service container orchestration for Telecom HybridAI platform and Observability stack.
+# Architecture/Context: Orchestrates PostgreSQL, FastMCP Server, CRM Console, Prometheus, Loki, and Grafana.
+# Dependencies/Side Effects: All services connect over internal bridge network 'telecom-net'.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: telecom-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-telecom_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telecom_secure_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-telecom_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-telecom_user} -d ${POSTGRES_DB:-telecom_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - telecom-net
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telecom-mcp-server
+    restart: unless-stopped
+    command: ["python3", "-m", "src.mcp.server"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      MCP_PORT: 8001
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-telecom-mcp-secret-token-change-in-prod-xyz987}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-telecom_user}:${POSTGRES_PASSWORD:-telecom_secure_pass}@postgres:5432/${POSTGRES_DB:-telecom_db}
+      LOKI_URL: http://loki:3100
+      LOG_LEVEL: INFO
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - telecom-net
+
+  crm-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telecom-crm-console
+    restart: unless-stopped
+    command: ["python3", "-m", "src.crm.app"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      CRM_PORT: 8000
+      MCP_PORT: 8001
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-telecom-mcp-secret-token-change-in-prod-xyz987}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-telecom_user}:${POSTGRES_PASSWORD:-telecom_secure_pass}@postgres:5432/${POSTGRES_DB:-telecom_db}
+      LOKI_URL: http://loki:3100
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - telecom-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: telecom-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./deploy/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - telecom-net
+
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: telecom-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - telecom-net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: telecom-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-telecom_admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - telecom-net
+
+networks:
+  telecom-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  loki_data:
+  prometheus_data:
+  grafana_data:
