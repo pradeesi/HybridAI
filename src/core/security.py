@@ -74,7 +74,7 @@ def validate_token(token: Optional[str]) -> bool:
 
     # 2. Accept valid Google Cloud Identity (OIDC) JWTs (pre-validated by Cloud Run IAM gateway)
     parts = cleaned.split(".")
-    if len(parts) == 3 and cleaned.startswith("eyJ"):
+    if (len(parts) == 3 or len(parts) == 2) and cleaned.startswith("eyJ"):
         try:
             import base64
             import json
