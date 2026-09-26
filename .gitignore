@@ -1,0 +1,42 @@
+# Purpose: Defines file and directory patterns ignored by Git version control for HybridAI.
+# Architecture/Context: Root-level configuration for repository security and hygiene.
+# Dependencies/Side Effects: Prevents accidental commit of credentials, secrets, dependencies, and OS metadata.
+
+# Secrets Protection
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*credentials*.json
+*service_account*.json
+client_secret*.json
+
+# Dependencies & Virtual Environments
+node_modules/
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+target/
+vendor/
+
+# Build & Compilation Outputs
+dist/
+build/
+out/
+*.egg-info/
+.eggs/
+
+# IDE & OS Noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
