@@ -129,6 +129,8 @@ HybridAI/
 │           ├── base.html                      # Master layout with responsive navbar & status indicators
 │           ├── customer_detail.html           # Customer 360 console with live telemetry & remote action buttons
 │           └── dashboard.html                 # Queue view, active outages banner, and GE App integration helper
+├── scripts/                                   # Developer utilities & authenticated proxies
+│   └── cloudrun_gateway.py                    # Multi-service local proxy bridge for private Cloud Run services
 └── tests/
     └── test_telecom_mcp.py                    # Automated test suite (PII, Auth, DB seeding, MCP tools)
 ```
@@ -538,6 +540,21 @@ curl -s -X POST "${MCP_URL}/mcp" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_customer", "arguments": {"query": "Elena"}}}' | jq .
 ```
+
+##### D. Accessing Services in Your Web Browser (Authenticated Gateway)
+Because Google Cloud Run IAM requires an HTTP `Authorization: Bearer` header that standard web browsers do not attach natively, a multi-port gateway bridge is provided at [`scripts/cloudrun_gateway.py`](scripts/cloudrun_gateway.py).
+
+Run the gateway script on your local machine:
+```bash
+python3 scripts/cloudrun_gateway.py
+```
+
+This binds to your local ports, automatically signs requests with your active `gcloud` identity, and proxies traffic to the live Cloud Run instances with zero 403 Forbidden errors:
+* **CRM Console**: 👉 [http://localhost:8000](http://localhost:8000)
+* **Grafana Dashboards**: 👉 [http://localhost:3000](http://localhost:3000) *(Login: `admin` / `telecom_admin`)*
+* **Prometheus Web UI**: 👉 [http://localhost:9090](http://localhost:9090)
+* **FastMCP Server**: 👉 [http://localhost:8001/mcp](http://localhost:8001/mcp)
+* **Loki Log Ingestion**: 👉 [http://localhost:3100](http://localhost:3100)
 
 ---
 
