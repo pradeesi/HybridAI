@@ -25,6 +25,10 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
+# Default container CLI commands (dynamically set to use sudo if session lacks direct socket permissions)
+DOCKER_CMD="docker"
+COMPOSE_CMD="docker compose"
+
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -78,27 +82,45 @@ check_and_install_prerequisites() {
         
         # Ensure docker service starts on VM boot
         sudo systemctl enable --now docker
-        log_success "Docker installed successfully: $(docker --version)"
+        log_success "Docker installed successfully: $(docker --version 2>/dev/null || sudo docker --version 2>/dev/null || echo 'installed')"
     else
-        log_success "Docker engine detected: $(docker --version)"
+        log_success "Docker engine detected: $(docker --version 2>/dev/null || sudo docker --version 2>/dev/null || echo 'installed')"
+    fi
+
+    # Ensure current user has permissions to run docker without sudo in future login sessions
+    if ! groups | grep -q docker; then
+        log_info "Adding user '${USER:-$LOGNAME}' to docker group for subsequent sessions..."
+        sudo usermod -aG docker "${USER:-$LOGNAME}" 2>/dev/null || true
+    fi
+
+    # Determine whether Docker commands require 'sudo' in the active shell session.
+    # Note: Supplementary group updates via usermod do not affect currently running processes
+    # until a new login shell is spawned. Thus, we test direct access to the Docker socket.
+    if docker info &>/dev/null; then
+        DOCKER_CMD="docker"
+        log_success "Docker socket accessible without sudo in active session."
+    elif sudo docker info &>/dev/null; then
+        DOCKER_CMD="sudo docker"
+        log_warn "Active shell lacks non-root Docker socket permissions; automatically using 'sudo docker'."
+    else
+        DOCKER_CMD="sudo docker"
     fi
 
     # Check for docker compose support (plugin or standalone binary)
-    if docker compose version &>/dev/null; then
-        COMPOSE_CMD="docker compose"
+    if ${DOCKER_CMD} compose version &>/dev/null; then
+        COMPOSE_CMD="${DOCKER_CMD} compose"
     elif command -v docker-compose &>/dev/null; then
-        COMPOSE_CMD="docker-compose"
+        if [[ "${DOCKER_CMD}" == *"sudo"* ]]; then
+            COMPOSE_CMD="sudo docker-compose"
+        else
+            COMPOSE_CMD="docker-compose"
+        fi
     else
         log_warn "Installing Docker Compose plugin..."
         sudo apt-get update -y && sudo apt-get install -y docker-compose-plugin
-        COMPOSE_CMD="docker compose"
+        COMPOSE_CMD="${DOCKER_CMD} compose"
     fi
     log_success "Docker Compose command: ${COMPOSE_CMD}"
-
-    # Ensure current user has permissions to run docker without sudo where possible
-    if ! groups | grep -q docker; then
-        sudo usermod -aG docker "$USER" 2>/dev/null || true
-    fi
 }
 
 # ==============================================================================
@@ -114,30 +136,30 @@ install_and_start_portainer() {
     log_info "Configuring and deploying Portainer Community Edition (CE)..."
 
     # Check if a Portainer container is already running
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
+    if ${DOCKER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
         log_success "Portainer CE container is already running."
         return 0
     fi
 
     # Check if a Portainer container exists in stopped state
-    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
+    if ${DOCKER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
         log_info "Portainer container exists but is stopped. Starting container..."
-        docker start portainer
+        ${DOCKER_CMD} start portainer
         log_success "Portainer CE container started."
         return 0
     fi
 
     # Create persistent volume for Portainer configuration and state
-    if ! docker volume ls --format '{{.Name}}' 2>/dev/null | grep -q '^portainer_data$'; then
-        docker volume create portainer_data >/dev/null
+    if ! ${DOCKER_CMD} volume ls --format '{{.Name}}' 2>/dev/null | grep -q '^portainer_data$'; then
+        ${DOCKER_CMD} volume create portainer_data >/dev/null
         log_info "Created persistent Docker volume 'portainer_data'."
     fi
 
     # Deploy Portainer CE container
     # Portainer web dashboard binds to 9443 (HTTPS) and 9000 (HTTP).
     # Host port 8000 (Portainer edge agent tunnel) is omitted to avoid conflict with the Telecom CRM console.
-    log_info "Provisioning portainer/portainer-ce:latest container..."
-    docker run -d \
+    log_info "Provisioning portainer/portainer-ce:latest container via ${DOCKER_CMD}..."
+    ${DOCKER_CMD} run -d \
         -p 9000:9000 \
         -p 9443:9443 \
         --name portainer \
@@ -257,7 +279,7 @@ verify_and_test_stack() {
     echo -n -e "  Waiting for ${BOLD}PostgreSQL${NC} (5432)..."
     local pg_attempt=1
     while [ $pg_attempt -le 25 ]; do
-        if docker inspect --format='{{json .State.Health.Status}}' telecom-postgres 2>/dev/null | grep -q '"healthy"'; then
+        if ${DOCKER_CMD} inspect --format='{{json .State.Health.Status}}' telecom-postgres 2>/dev/null | grep -q '"healthy"'; then
             echo -e " ${GREEN}ONLINE (Database Ready)${NC}"
             break
         fi
@@ -348,6 +370,9 @@ display_service_summary() {
     echo -e "${BOLD}MCP_AUTH_TOKEN=${mcp_auth_token}${NC}"
     echo ""
     echo -e "${GREEN}All services are running in background. Manage with: ${BOLD}${COMPOSE_CMD} ps / logs / down${NC}"
+    if [[ "${DOCKER_CMD}" == *"sudo"* ]]; then
+        echo -e "${YELLOW}Tip: To run docker commands without 'sudo', run 'newgrp docker' or log out and log back in.${NC}"
+    fi
     echo -e "${GREEN}${BOLD}===============================================================================${NC}"
 }
 
