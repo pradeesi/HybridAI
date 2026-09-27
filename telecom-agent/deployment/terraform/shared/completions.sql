@@ -1,27 +1,8 @@
--- Copyright 2026 Google LLC
---
--- Licensed under the Apache License, Version 2.0 (the "License");
--- you may not use this file except in compliance with the License.
--- You may obtain a copy of the License at
---
---     https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
+-- DEMO SOFTWARE DISCLAIMER:
+-- This code is provided strictly as a demonstration and reference implementation.
+-- It comes with NO WARRANTY, NO GUARANTEE, and NO SUPPORT of any kind, either expressed or implied.
+-- Use and deployment in any environment is entirely at your own discretion and risk.
 
--- Optimized join of Cloud Logging BQ export data with GCS-stored prompt/response data.
--- This query extracts both input and output messages referenced in logs.
--- Note: Input files contain full conversation history, so messages may appear multiple times.
---
--- Log data is exported directly to BigQuery via log sinks.
--- The table `gen_ai_client_inference_operation_details` is pre-created by Terraform
--- and populated by Cloud Logging via the sink.
--- Labels are flattened into individual columns (dots replaced with underscores).
-
--- Extract message references from Cloud Logging BQ export (scan once, extract both input/output)
 WITH log_refs AS (
   SELECT
     insertId AS insert_id,

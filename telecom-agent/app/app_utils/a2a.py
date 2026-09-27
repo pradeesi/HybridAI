@@ -1,23 +1,12 @@
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Purpose: Attach Agent-to-Agent (A2A) protocol endpoints to the FastAPI application.
+Architecture/Context: Registers dynamic agent-card and JSON-RPC endpoints for Gemini Enterprise and peer agent interop.
+Dependencies/Side Effects: Interacts with ADK runner, InMemoryTaskStore, and session service.
 
-"""Attach A2A (Agent2Agent) endpoints to the FastAPI app.
-
-func:`attach_a2a_routes` registers the dynamic
-agent-card endpoint and the JSON-RPC endpoint so the same app serves A2A
-alongside the adk_api routes, reachable by A2A clients and Gemini Enterprise A2A
-registration.
+DEMO SOFTWARE DISCLAIMER:
+This code is provided strictly as a demonstration and reference implementation.
+It comes with NO WARRANTY, NO GUARANTEE, and NO SUPPORT of any kind, either expressed or implied.
+Use and deployment in any environment is entirely at your own discretion and risk.
 """
 
 from __future__ import annotations

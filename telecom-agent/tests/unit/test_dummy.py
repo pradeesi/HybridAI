@@ -1,16 +1,12 @@
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Purpose: Unit tests placeholder for Telecom Agent business logic.
+Architecture/Context: Space for unit testing agent decision making and data transformations.
+
+DEMO SOFTWARE DISCLAIMER:
+This code is provided strictly as a demonstration and reference implementation.
+It comes with NO WARRANTY, NO GUARANTEE, and NO SUPPORT of any kind, either expressed or implied.
+Use and deployment in any environment is entirely at your own discretion and risk.
+"""
 """
 You can add your unit tests here.
 This is where you test your business logic, including agent functionality,
