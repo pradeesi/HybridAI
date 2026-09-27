@@ -690,14 +690,32 @@ For clients supporting SSE transport:
   ```
 
 ### Available Custom MCP Actions:
-- `search_customer`: Quick phone/name subscriber lookup with masked PII.
-- `get_customer_360`: Full profile with PII masked (address, SSN, phone).
+- `search_customer`: Quick phone/name subscriber lookup with masked PII and `agent_email` audit logging.
+- `get_customer_360`: Full profile with PII masked (address, SSN, phone) and `agent_email` audit logging.
 - `get_service_diagnostics`: Real-time ONT optical dBm signal & 5G telemetry.
 - `run_remote_device_action`: Reboot ONT or optimize Wi-Fi channels remotely.
 - `check_network_outages`: Check for area fiber cuts or tower repairs by postal code.
-- `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes.
+- `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes with PCI-DSS masking.
 - `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
 - `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
+
+### Security, Compliance & Non-Repudiation Architecture (Identity Propagation)
+
+In enterprise customer care, strict regulatory frameworks (**FCC CPNI Part 64**, **PCI-DSS v4.0**, **GDPR Article 30**, and **SOC 2 Type II CC6**) require immutable non-repudiation: every customer lookup and hardware reboot must be cryptographically tied to the exact human agent who authorized it.
+
+#### Why User Details Initially Showed as `gemini-enterprise-agent`:
+1. **Shared Secret vs. Identity Token**: When connecting Gemini Enterprise via static Bearer Token (`telecom-mcp-secret-token...`), the Google Discovery Engine backend calls Cloud Run using this shared credential, which contains no individual user claims.
+2. **Google Identity Isolation**: To safeguard employee privacy across disparate integrations, Google Gemini Enterprise does not blindly forward the logged-in user's corporate email in standard HTTP headers unless specifically requested in the tool schema or configured via OAuth 2.0 (3LO) / Identity-Aware Proxy (IAP).
+
+#### Multi-Vector Identity & Telemetry Resolution:
+The FastMCP server implements a prioritized multi-vector identity resolution engine:
+1. **Tool Schema Parameter (`agent_email`)**: Each MCP action schema exposes `agent_email`. When Gemini Enterprise operates with the Telecom Agent Skill, the LLM extracts the agent's identity from the session context and explicitly supplies it in every JSON-RPC tool invocation.
+2. **Google Cloud IAP Header**: Evaluates `X-Goog-Authenticated-User-Email` (stripping `accounts.google.com:` prefix) for corporate environments using Identity-Aware Proxy.
+3. **Decoded OIDC/OAuth JWT Claims**: Decodes incoming Identity Tokens, extracting `email`, `sub` (Google Subject ID), `hd` (Hosted Domain), and `azp` (Authorized Party).
+4. **Client Network Telemetry & Distributed Tracing**:
+   - **Origin Client IP**: Extracted from `X-Forwarded-For` proxy chain.
+   - **Google Cloud Trace ID**: Extracted from `X-Cloud-Trace-Context` to correlate Grafana Loki audit streams directly with Google Cloud Logging and Cloud Trace.
+   - **Compliance Regimes**: Automatically tags records with `CPNI`, `PCI-DSS-v4.0`, `GDPR`, and `SOC-2`.
 
 ### Comprehensive Test Prompts for Gemini Enterprise Chat:
 

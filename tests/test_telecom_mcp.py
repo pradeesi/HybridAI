@@ -68,8 +68,28 @@ class TestSecurityAndPII(unittest.TestCase):
         custom_header = "executive-mike@telecom.com"
         self.assertEqual(extract_caller_identity(custom_agent_header=custom_header), "executive-mike@telecom.com")
 
-        # 3. Fallback when no headers present
+        # 3. Explicit payload user from tool argument or MCP _meta
+        self.assertEqual(extract_caller_identity(payload_user="admin@pradeesi.altostrat.com"), "admin@pradeesi.altostrat.com")
+
+        # 4. Fallback when no headers present
         self.assertEqual(extract_caller_identity(), "gemini-enterprise-agent")
+
+    def test_extract_security_context(self):
+        from src.core.security import extract_security_context
+        headers = {
+            "x-forwarded-for": "173.194.96.179, 10.0.0.1",
+            "x-cloud-trace-context": "1d78db52281b503501f0dcc110a0d99b/12345;o=1",
+            "user-agent": "python-httpx/0.27.0"
+        }
+        ctx = extract_security_context(
+            headers=headers,
+            payload_user="admin@pradeesi.altostrat.com"
+        )
+        self.assertEqual(ctx["caller_identity"], "admin@pradeesi.altostrat.com")
+        self.assertEqual(ctx["caller_type"], "HUMAN_AGENT")
+        self.assertEqual(ctx["client_ip"], "173.194.96.179")
+        self.assertEqual(ctx["trace_id"], "1d78db52281b503501f0dcc110a0d99b")
+        self.assertIn("CPNI-FCC-Part-64", ctx["compliance_regimes"])
 
 
 class TestMCPToolsAndDatabase(unittest.IsolatedAsyncioTestCase):

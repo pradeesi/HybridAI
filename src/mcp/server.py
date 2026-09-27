@@ -17,7 +17,12 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.core.audit import audit_client
 from src.core.config import settings
-from src.core.security import extract_caller_identity, validate_bearer_token, validate_token
+from src.core.security import (
+    extract_caller_identity,
+    extract_security_context,
+    validate_bearer_token,
+    validate_token,
+)
 from src.db.database import init_db
 from src.db.seed_data import seed_synthetic_telecom_data
 from src.mcp.tools import (
@@ -86,11 +91,13 @@ async def verify_auth_token(
         HTTPException(401): If request cannot be authenticated.
     """
     token_candidate = authorization or x_serverless_auth or x_mcp_token
-    caller_id = extract_caller_identity(
+    security_context = extract_security_context(
         token=token_candidate,
-        user_email_header=x_goog_user_email,
-        custom_agent_header=x_agent_identity
+        headers=dict(request.headers),
+        client_ip=request.client.host if request.client else None
     )
+    request.state.security_context = security_context
+    caller_id = security_context["caller_identity"]
 
     # 1. Check direct token in Authorization, X-MCP-Token, or X-Serverless-Authorization
     if (
@@ -118,6 +125,7 @@ async def verify_auth_token(
         caller_identity="unknown",
         tool_name="AUTH_GATEWAY",
         status="DENIED",
+        security_context=security_context,
         details={"reason": "Invalid or missing Bearer/MCP token"}
     )
     raise HTTPException(
@@ -135,7 +143,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search keyword, subscriber phone, or account ID"}
+                "query": {"type": "string", "description": "Search keyword, subscriber phone, or account ID"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["query"]
         }
@@ -146,7 +155,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_id": {"type": "string", "description": "Customer UUID"}
+                "customer_id": {"type": "string", "description": "Customer UUID"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["customer_id"]
         }
@@ -157,7 +167,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "service_id": {"type": "string", "description": "Subscription UUID"}
+                "service_id": {"type": "string", "description": "Subscription UUID"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["service_id"]
         }
@@ -169,7 +180,8 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "device_id": {"type": "string", "description": "Device UUID"},
-                "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"}
+                "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["device_id", "action"]
         }
@@ -180,7 +192,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "postal_code": {"type": "string", "description": "Customer 5-digit postal code"}
+                "postal_code": {"type": "string", "description": "Customer 5-digit postal code"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["postal_code"]
         }
@@ -191,7 +204,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "account_id": {"type": "string", "description": "Account UUID or Account Number"}
+                "account_id": {"type": "string", "description": "Account UUID or Account Number"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["account_id"]
         }
@@ -202,7 +216,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_id": {"type": "string", "description": "Customer UUID"}
+                "customer_id": {"type": "string", "description": "Customer UUID"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["customer_id"]
         }
@@ -219,7 +234,8 @@ TOOL_DEFINITIONS = [
                 "resolution_summary": {"type": "string", "description": "Solution provided"},
                 "call_duration_sec": {"type": "integer", "description": "Call duration in seconds"},
                 "upsell_offered": {"type": "boolean", "description": "Was an upsell offer pitched"},
-                "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"}
+                "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"},
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
             },
             "required": ["customer_id", "issue_summary", "resolution_summary"]
         }
@@ -276,17 +292,29 @@ async def execute_tool(request: Request, auth: str = Depends(verify_auth_token))
     body = await request.json()
     tool_name = body.get("name")
     arguments = body.get("arguments", {})
-    caller_id = body.get("caller_id") or auth
+    security_context = getattr(
+        request.state,
+        "security_context",
+        extract_security_context(
+            headers=dict(request.headers),
+            client_ip=request.client.host if request.client else None
+        )
+    )
+    caller_id = arguments.get("agent_email") or body.get("caller_id") or auth
 
     if not tool_name or tool_name not in TOOL_HANDLER_MAP:
         raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' is not recognized.")
 
     handler = TOOL_HANDLER_MAP[tool_name]
-    result = await handler(**arguments, caller_id=caller_id)
+    result = await handler(**arguments, caller_id=caller_id, security_context=security_context)
     return {"result": result}
 
 
-async def _process_single_mcp_message(payload: Dict[str, Any], caller_id: str = "gemini-enterprise-mcp") -> Optional[Dict[str, Any]]:
+async def _process_single_mcp_message(
+    payload: Dict[str, Any],
+    caller_id: str = "gemini-enterprise-mcp",
+    security_context: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Summary:
         Processes a single JSON-RPC 2.0 MCP message according to the Model Context Protocol.
@@ -294,6 +322,7 @@ async def _process_single_mcp_message(payload: Dict[str, Any], caller_id: str = 
     Parameters:
         payload (Dict[str, Any]): Parsed JSON-RPC request dictionary.
         caller_id (str): Identifier of the caller for audit logging.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Optional[Dict[str, Any]]: JSON-RPC response object or None for notifications.
@@ -353,9 +382,30 @@ async def _process_single_mcp_message(payload: Dict[str, Any], caller_id: str = 
                 "error": {"code": -32601, "message": f"Method not found: {tool_name}"}
             }
 
+        # Check for explicit agent email in arguments or metadata
+        meta = params.get("_meta", {}) or payload.get("_meta", {}) or {}
+        explicit_user = (
+            tool_args.get("agent_email")
+            or tool_args.get("caller_user")
+            or tool_args.get("agent_name")
+            or meta.get("user")
+            or meta.get("user_email")
+            or meta.get("agent_email")
+        )
+        if explicit_user and isinstance(explicit_user, str) and explicit_user.strip():
+            caller_id = explicit_user.strip()
+            if security_context:
+                security_context["caller_identity"] = caller_id
+                if "@" in caller_id and "gserviceaccount" not in caller_id:
+                    security_context["caller_type"] = "HUMAN_AGENT"
+
         handler = TOOL_HANDLER_MAP[tool_name]
         try:
-            tool_result = await handler(**tool_args, caller_id=caller_id)
+            tool_result = await handler(
+                **tool_args,
+                caller_id=caller_id,
+                security_context=security_context
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -446,17 +496,34 @@ async def handle_mcp_message(request: Request, auth: str = Depends(verify_auth_t
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
 
+    security_context = getattr(
+        request.state,
+        "security_context",
+        extract_security_context(
+            headers=dict(request.headers),
+            client_ip=request.client.host if request.client else None
+        )
+    )
+
     if isinstance(payload, list):
         responses = []
         for item in payload:
             if isinstance(item, dict):
-                res = await _process_single_mcp_message(item, caller_id=auth)
+                res = await _process_single_mcp_message(
+                    item,
+                    caller_id=auth,
+                    security_context=security_context
+                )
                 if res is not None:
                     responses.append(res)
         return responses
 
     elif isinstance(payload, dict):
-        res = await _process_single_mcp_message(payload, caller_id=auth)
+        res = await _process_single_mcp_message(
+            payload,
+            caller_id=auth,
+            security_context=security_context
+        )
         if res is None:
             return Response(status_code=204)
         return res

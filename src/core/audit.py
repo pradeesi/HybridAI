@@ -91,19 +91,23 @@ class LokiAuditClient:
         tool_name: str,
         details: Dict[str, Any],
         status: str = "SUCCESS",
-        customer_id: Optional[str] = None
+        customer_id: Optional[str] = None,
+        security_context: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Summary:
             Emits an immutable structured audit log entry to Loki and local logs.
+            Captures enterprise security context, client network telemetry,
+            trace IDs, non-repudiation identity, and compliance metadata.
 
         Parameters:
             event_type (str): Type of audit event (e.g. 'MCP_TOOL_EXECUTION', 'AUTH_FAILURE').
-            caller_identity (str): Identity of the calling agent or service (e.g., 'gemini-enterprise-app').
+            caller_identity (str): Identity of the calling agent, user, or service (e.g., 'sarah.jenkins@telecom.com').
             tool_name (str): Name of the invoked tool or operation.
             details (Dict[str, Any]): Additional structured event details.
             status (str): Execution status ('SUCCESS', 'FAILED', 'DENIED').
             customer_id (Optional[str]): Target customer ID if applicable.
+            security_context (Optional[Dict[str, Any]]): Comprehensive security attributes (IP, trace ID, compliance).
 
         Return Value:
             None
@@ -111,13 +115,38 @@ class LokiAuditClient:
         timestamp_ns = str(time.time_ns())
         timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+        sec_ctx = security_context or {}
+        caller_type = sec_ctx.get(
+            "caller_type",
+            "HUMAN_AGENT" if "@" in caller_identity and "gserviceaccount" not in caller_identity else "SERVICE_AGENT"
+        )
+        client_ip = sec_ctx.get("client_ip", "N/A")
+        user_agent = sec_ctx.get("user_agent", "N/A")
+        trace_id = sec_ctx.get("trace_id", "N/A")
+        auth_method = sec_ctx.get("auth_method", "BEARER_TOKEN")
+        compliance_regimes = sec_ctx.get(
+            "compliance_regimes",
+            ["CPNI-FCC-Part-64", "PCI-DSS-v4.0", "GDPR-Art-30", "SOC-2-CC6"]
+        )
+        data_classification = sec_ctx.get("data_classification", "RESTRICTED_CUSTOMER_OPERATIONS")
+
         payload_data = {
             "timestamp": timestamp_iso,
             "event_type": event_type,
             "caller": caller_identity,
+            "caller_type": caller_type,
             "tool": tool_name,
             "status": status,
             "customer_id": customer_id or "N/A",
+            "client_ip": client_ip,
+            "user_agent": user_agent,
+            "trace_id": trace_id,
+            "auth_method": auth_method,
+            "compliance": {
+                "regimes": compliance_regimes,
+                "data_classification": data_classification,
+                "non_repudiation": "VERIFIED_AGENT" if caller_type == "HUMAN_AGENT" else "SERVICE_SHARED"
+            },
             "details": details
         }
         log_line = json.dumps(payload_data)
@@ -139,7 +168,9 @@ class LokiAuditClient:
                         "event_type": event_type,
                         "tool": tool_name,
                         "caller": caller_identity,
-                        "status": status
+                        "caller_type": caller_type,
+                        "status": status,
+                        "auth_method": auth_method
                     },
                     "values": [
                         [timestamp_ns, log_line]

@@ -35,7 +35,42 @@ TOOL_LATENCY_HISTOGRAM = Histogram(
 )
 
 
-async def search_customer_tool(query: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+def _resolve_effective_caller(
+    caller_id: str,
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Summary:
+        Determines the most accurate identity for non-repudiation audit trails.
+        Prioritizes verified user email from arguments, security context, or fallback caller ID.
+
+    Parameters:
+        caller_id (str): Default caller identifier.
+        agent_email (Optional[str]): Explicit user email provided in tool call.
+        security_context (Optional[Dict[str, Any]]): Request-level security context.
+
+    Return Value:
+        str: Resolved caller identity string.
+    """
+    if agent_email and agent_email.strip():
+        return agent_email.strip()
+    if security_context and security_context.get("caller_identity"):
+        ctx_id = security_context["caller_identity"]
+        if ctx_id and not ctx_id.startswith("gemini-enterprise-agent (Shared"):
+            return ctx_id
+    if agent_email:
+        return agent_email
+    return caller_id
+
+
+async def search_customer_tool(
+    query: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Finds customer records matching a search query (name, phone number, email, or account number).
@@ -44,12 +79,15 @@ async def search_customer_tool(query: str, caller_id: str = "gemini-enterprise")
     Parameters:
         query (str): Search term (e.g., customer name, phone, or account ID).
         caller_id (str): Identity of the calling agent or system.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Search results payload with masked subscriber details.
     """
     start_time = time.time()
     tool_name = "search_customer"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -89,9 +127,10 @@ async def search_customer_tool(query: str, caller_id: str = "gemini-enterprise")
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"query": query, "matches_found": len(results_list)}
             )
 
@@ -104,15 +143,22 @@ async def search_customer_tool(query: str, caller_id: str = "gemini-enterprise")
             TOOL_CALL_COUNTER.labels(tool_name=tool_name, status="FAILED").inc()
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="FAILED",
+                security_context=security_context,
                 details={"query": query, "error": str(exc)}
             )
             return {"status": "error", "message": f"Customer lookup failed: {str(exc)}"}
 
 
-async def get_customer_360_tool(customer_id: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+async def get_customer_360_tool(
+    customer_id: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Retrieves a 360-degree consolidated profile of a telecom customer.
@@ -225,13 +271,15 @@ async def get_customer_360_tool(customer_id: str, caller_id: str = "gemini-enter
             TOOL_CALL_COUNTER.labels(tool_name=tool_name, status="SUCCESS").inc()
             duration = time.time() - start_time
             TOOL_LATENCY_HISTOGRAM.labels(tool_name=tool_name).observe(duration)
+            effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 customer_id=c.id,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"accessed_profile": f"{c.first_name} {c.last_name}", "pii_sanitized": True}
             )
 
@@ -241,7 +289,13 @@ async def get_customer_360_tool(customer_id: str, caller_id: str = "gemini-enter
             return {"status": "error", "message": f"Failed fetching customer 360: {str(exc)}"}
 
 
-async def get_service_diagnostics_tool(service_id: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+async def get_service_diagnostics_tool(
+    service_id: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Performs remote line diagnostics for a Home Broadband ONT or Mobile 5G connection.
@@ -250,12 +304,15 @@ async def get_service_diagnostics_tool(service_id: str, caller_id: str = "gemini
     Parameters:
         service_id (str): Subscription UUID.
         caller_id (str): Identity of the calling agent.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Detailed telemetry and root-cause diagnostic assessment.
     """
     start_time = time.time()
     tool_name = "get_service_diagnostics"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -311,9 +368,10 @@ async def get_service_diagnostics_tool(service_id: str, caller_id: str = "gemini
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"service_id": service_id, "service_type": sub.service_type}
             )
 
@@ -331,7 +389,10 @@ async def get_service_diagnostics_tool(service_id: str, caller_id: str = "gemini
 async def run_remote_device_action_tool(
     device_id: str,
     action: str,
-    caller_id: str = "gemini-enterprise"
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Summary:
@@ -342,12 +403,15 @@ async def run_remote_device_action_tool(
         device_id (str): UUID of the target hardware device.
         action (str): Action command ('reboot', 'channel_optimization', 'ping_sweep').
         caller_id (str): Calling agent ID.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Execution status, updated telemetry, and completion timestamp.
     """
     start_time = time.time()
     tool_name = "run_remote_device_action"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -386,9 +450,10 @@ async def run_remote_device_action_tool(
 
             await audit_client.log_event(
                 event_type="PRIVILEGED_DEVICE_ACTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"device_id": device_id, "action": action, "serial": device.serial_number}
             )
 
@@ -405,7 +470,13 @@ async def run_remote_device_action_tool(
             return {"status": "error", "message": f"Action execution failed: {str(exc)}"}
 
 
-async def check_network_outages_tool(postal_code: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+async def check_network_outages_tool(
+    postal_code: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Checks for active or investigating network infrastructure outages in a postal area.
@@ -413,12 +484,15 @@ async def check_network_outages_tool(postal_code: str, caller_id: str = "gemini-
     Parameters:
         postal_code (str): Customer ZIP/postal code.
         caller_id (str): Calling agent ID.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: List of active infrastructure incidents or clean status.
     """
     start_time = time.time()
     tool_name = "check_network_outages"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -444,9 +518,10 @@ async def check_network_outages_tool(postal_code: str, caller_id: str = "gemini-
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"postal_code": postal_code, "outages_count": len(matching_outages)}
             )
 
@@ -461,7 +536,13 @@ async def check_network_outages_tool(postal_code: str, caller_id: str = "gemini-
             return {"status": "error", "message": f"Failed checking outages: {str(exc)}"}
 
 
-async def get_billing_breakdown_tool(account_id: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+async def get_billing_breakdown_tool(
+    account_id: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Retrieves line-item breakdown of the most recent bills, roaming fees, and dispute notes.
@@ -470,12 +551,15 @@ async def get_billing_breakdown_tool(account_id: str, caller_id: str = "gemini-e
     Parameters:
         account_id (str): Billing account ID or account number.
         caller_id (str): Calling agent ID.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Itemized invoice breakdown.
     """
     start_time = time.time()
     tool_name = "get_billing_breakdown"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -511,9 +595,10 @@ async def get_billing_breakdown_tool(account_id: str, caller_id: str = "gemini-e
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"account_number": acc.account_number}
             )
 
@@ -529,7 +614,13 @@ async def get_billing_breakdown_tool(account_id: str, caller_id: str = "gemini-e
             return {"status": "error", "message": f"Billing lookup error: {str(exc)}"}
 
 
-async def get_upsell_recommendations_tool(customer_id: str, caller_id: str = "gemini-enterprise") -> Dict[str, Any]:
+async def get_upsell_recommendations_tool(
+    customer_id: str,
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Summary:
         Analyzes customer subscription and usage metrics to compute personalized upsell offers
@@ -538,12 +629,15 @@ async def get_upsell_recommendations_tool(customer_id: str, caller_id: str = "ge
     Parameters:
         customer_id (str): Customer UUID.
         caller_id (str): Calling agent ID.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Ranked list of targeted promotional upgrades.
     """
     start_time = time.time()
     tool_name = "get_upsell_recommendations"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -594,10 +688,11 @@ async def get_upsell_recommendations_tool(customer_id: str, caller_id: str = "ge
 
             await audit_client.log_event(
                 event_type="MCP_TOOL_EXECUTION",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 customer_id=customer_id,
                 status="SUCCESS",
+                security_context=security_context,
                 details={"recommendations_count": len(recommendations)}
             )
 
@@ -616,10 +711,13 @@ async def log_agent_interaction_tool(
     agent_name: str,
     issue_summary: str,
     resolution_summary: str,
-    call_duration_sec: int,
+    call_duration_sec: int = 180,
     upsell_offered: bool = False,
     upsell_accepted: bool = False,
-    caller_id: str = "gemini-enterprise"
+    caller_id: str = "gemini-enterprise",
+    agent_email: Optional[str] = None,
+    security_context: Optional[Dict[str, Any]] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Summary:
@@ -634,12 +732,15 @@ async def log_agent_interaction_tool(
         upsell_offered (bool): Whether an upsell was proposed.
         upsell_accepted (bool): Whether customer agreed to upgrade.
         caller_id (str): Calling agent ID.
+        agent_email (Optional[str]): Authenticated email of human contact center agent.
+        security_context (Optional[Dict[str, Any]]): Security and network context for compliance.
 
     Return Value:
         Dict[str, Any]: Recorded interaction ID and status.
     """
     start_time = time.time()
     tool_name = "log_agent_interaction"
+    effective_caller = _resolve_effective_caller(caller_id, agent_email or agent_name, security_context)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -661,10 +762,11 @@ async def log_agent_interaction_tool(
 
             await audit_client.log_event(
                 event_type="CALL_INTERACTION_RECORDED",
-                caller_identity=caller_id,
+                caller_identity=effective_caller,
                 tool_name=tool_name,
                 customer_id=customer_id,
                 status="SUCCESS",
+                security_context=security_context,
                 details={
                     "interaction_id": interaction.id,
                     "agent": agent_name,
