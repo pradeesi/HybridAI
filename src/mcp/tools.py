@@ -665,7 +665,7 @@ async def run_remote_device_action_tool(
             telemetry = dict(device.live_telemetry or {})
 
             if action.lower() == "reboot":
-                device.last_reboot_time = datetime.now(timezone.utc)
+                device.last_reboot_time = datetime.utcnow()
                 device.health_status = "HEALTHY"
                 telemetry["packet_loss_percent"] = 0.05
                 telemetry["latency_ms"] = 12.3
