@@ -347,7 +347,7 @@ Choose the playbook that fits your target environment:
 4. **Clone Repository & Launch All 6 Services**:
 
    **Option A: Automated One-Shot Deployment Script (Recommended)**
-   *Runs Docker prerequisite checks, installs Docker/Compose if missing, bootstraps all containers, performs health verification and end-to-end tool execution tests, and displays all access URLs:*
+   *Installs Docker Engine, Docker Compose, and Portainer Community Edition (CE) if missing, provisions all containers, performs health verification and end-to-end tool execution tests, and displays all access URLs:*
    ```bash
    git clone https://github.com/pradeesi/HybridAI.git
    cd HybridAI
@@ -425,6 +425,7 @@ Choose the playbook that fits your target environment:
 
 #### Accessing On-Premises Endpoints:
 Replace `<NODE_IP>` with your Ubuntu VM's local LAN IP (e.g. `192.168.1.50`) or Tailscale IP:
+- **Portainer CE Container UI**: `https://<NODE_IP>:9443` (or `http://<NODE_IP>:9000`)
 - **CRM Frontline Console**: `http://<NODE_IP>:8000`
 - **FastMCP Server (SSE & JSON-RPC)**: `http://<NODE_IP>:8001/mcp` (SSE stream: `http://<NODE_IP>:8001/sse`)
 - **Grafana Observability Dashboards**: `http://<NODE_IP>:3000` (User: `admin` / Password: value from `.env`)

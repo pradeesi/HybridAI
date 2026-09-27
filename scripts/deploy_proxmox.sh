@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
 # Purpose: Fully self-contained, idempotent deployment script for an Ubuntu VM on Proxmox VE.
-#          Installs Docker & Compose prerequisites if missing, provisions the complete Telecom
+#          Installs Docker Engine, Compose, and Portainer CE, provisions the complete Telecom
 #          platform (PostgreSQL, FastMCP Server, CRM App, Loki, Prometheus, Grafana), performs
 #          end-to-end health and tool execution tests, and displays all component URLs.
 # Architecture/Context: Standalone orchestrator for on-premises / homelab edge deployment
 #                       bridged with Google Cloud ADK Agent.
 # Dependencies/Side Effects: Requires Ubuntu/Debian OS with sudo access. Binds host ports
 #                            5432 (Postgres), 8000 (CRM), 8001 (FastMCP), 3100 (Loki),
-#                            9090 (Prometheus), and 3000 (Grafana).
+#                            9090 (Prometheus), 3000 (Grafana), and 9443/9000 (Portainer CE).
 #
 
 set -Eeuo pipefail
@@ -102,7 +102,55 @@ check_and_install_prerequisites() {
 }
 
 # ==============================================================================
-# 2. Host IP and Environment Configuration Setup
+# 2. Portainer Community Edition (CE) Setup & Deployment
+# ==============================================================================
+# Summary: Provisions and starts Portainer Community Edition (CE) in a dedicated container.
+#          Exposes Web UI on port 9443 (HTTPS) and port 9000 (HTTP). Binds /var/run/docker.sock
+#          and creates a persistent volume 'portainer_data'.
+# Parameters: None.
+# Return Value: 0 on success, exits on fatal failure.
+# Exceptions/Errors: Issues warning if container exists or error if docker run fails.
+install_and_start_portainer() {
+    log_info "Configuring and deploying Portainer Community Edition (CE)..."
+
+    # Check if a Portainer container is already running
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
+        log_success "Portainer CE container is already running."
+        return 0
+    fi
+
+    # Check if a Portainer container exists in stopped state
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^portainer$'; then
+        log_info "Portainer container exists but is stopped. Starting container..."
+        docker start portainer
+        log_success "Portainer CE container started."
+        return 0
+    fi
+
+    # Create persistent volume for Portainer configuration and state
+    if ! docker volume ls --format '{{.Name}}' 2>/dev/null | grep -q '^portainer_data$'; then
+        docker volume create portainer_data >/dev/null
+        log_info "Created persistent Docker volume 'portainer_data'."
+    fi
+
+    # Deploy Portainer CE container
+    # Portainer web dashboard binds to 9443 (HTTPS) and 9000 (HTTP).
+    # Host port 8000 (Portainer edge agent tunnel) is omitted to avoid conflict with the Telecom CRM console.
+    log_info "Provisioning portainer/portainer-ce:latest container..."
+    docker run -d \
+        -p 9000:9000 \
+        -p 9443:9443 \
+        --name portainer \
+        --restart=always \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v portainer_data:/data \
+        portainer/portainer-ce:latest
+
+    log_success "Portainer CE container launched successfully."
+}
+
+# ==============================================================================
+# 3. Host IP and Environment Configuration Setup
 # ==============================================================================
 # Summary: Detects the primary LAN IP of the Ubuntu VM and initializes the .env configuration.
 # Parameters: None.
@@ -157,7 +205,7 @@ EOF
 }
 
 # ==============================================================================
-# 3. Multi-Container Orchestration via Docker Compose
+# 4. Multi-Container Orchestration via Docker Compose
 # ==============================================================================
 # Summary: Builds custom images and deploys all 6 microservices in detached mode.
 # Parameters: None.
@@ -173,7 +221,7 @@ deploy_containers() {
 }
 
 # ==============================================================================
-# 4. Automated Health Verification & MCP Tool Execution Test
+# 5. Automated Health Verification & MCP Tool Execution Test
 # ==============================================================================
 # Summary: Probes each service endpoint until healthy and executes an authenticated tool call.
 # Parameters: None.
@@ -190,10 +238,10 @@ verify_and_test_stack() {
 
         echo -n -e "  Waiting for ${BOLD}${name}${NC} (${url})..."
         while [ $attempt -le $max_retries ]; do
-            # Use curl to inspect HTTP response status
+            # Use curl with -k to inspect HTTP status (handles self-signed TLS certs like Portainer's)
             local code
-            code=$(curl -s -o /dev/null -w "%{http_code}" "${url}" 2>/dev/null || echo "000")
-            if [ "$code" = "$expected_code" ] || [ "$code" = "200" ]; then
+            code=$(curl -s -k -o /dev/null -w "%{http_code}" "${url}" 2>/dev/null || echo "000")
+            if [ "$code" = "$expected_code" ] || [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
                 echo -e " ${GREEN}ONLINE (HTTP ${code})${NC}"
                 return 0
             fi
@@ -233,6 +281,9 @@ verify_and_test_stack() {
     # 6. Check Grafana Visual Command Center
     wait_for_endpoint "Grafana Command Center" "http://localhost:3000/api/health" "200"
 
+    # 7. Check Portainer Community Edition (CE) Dashboard
+    wait_for_endpoint "Portainer CE Web Dashboard" "https://localhost:9443" "200"
+
     echo ""
     log_info "Executing automated end-to-end MCP tool call to test database & logging..."
 
@@ -253,7 +304,7 @@ verify_and_test_stack() {
 }
 
 # ==============================================================================
-# 5. Display Component Access URLs and GCP Connection Snippet
+# 6. Display Component Access URLs and GCP Connection Snippet
 # ==============================================================================
 # Summary: Formats and outputs all access URLs and copy-pasteable configuration for the ADK Agent.
 # Parameters: None.
@@ -272,6 +323,7 @@ display_service_summary() {
     echo -e "${BOLD}Deployment Target:${NC} On-Premises (Proxmox VE Ubuntu VM / Docker Compose)"
     echo ""
     echo -e "${CYAN}${BOLD}--- Web Portals & Microservices ---${NC}"
+    printf "  %-30s %s\n" "Portainer CE Web Dashboard:" "https://${HOST_IP}:9443 (or http://${HOST_IP}:9000)"
     printf "  %-30s %s\n" "CRM Contact Center Console:" "http://${HOST_IP}:8000"
     printf "  %-30s %s\n" "FastMCP Server JSON-RPC:"   "http://${HOST_IP}:8001/mcp"
     printf "  %-30s %s\n" "FastMCP Server Health:"     "http://${HOST_IP}:8001/health"
@@ -302,6 +354,7 @@ display_service_summary() {
 # Main script execution flow
 main() {
     check_and_install_prerequisites
+    install_and_start_portainer
     setup_environment_config
     deploy_containers
     verify_and_test_stack
