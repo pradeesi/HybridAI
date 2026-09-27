@@ -240,10 +240,85 @@ def extract_security_context(
     }
 
 
+def mask_subscriber_name(name: Optional[str]) -> str:
+    """
+    Summary:
+        Masks the subscriber's personal name to prevent identity exposure in AI agent tool payloads.
+        Example: 'Elena Rostova' -> 'E**** R******'.
+
+    Parameters:
+        name (Optional[str]): Raw subscriber name.
+
+    Return Value:
+        str: Masked subscriber name or '[MASKED_SUBSCRIBER]'.
+    """
+    if not name or not name.strip():
+        return "[MASKED_SUBSCRIBER]"
+    PII_REDACTIONS_COUNTER.labels(field_type="name").inc()
+    parts = name.strip().split()
+    if not parts:
+        return "[MASKED_SUBSCRIBER]"
+    masked_parts = []
+    for part in parts:
+        if len(part) <= 1:
+            masked_parts.append(part[0] + "*")
+        else:
+            masked_parts.append(part[0] + "*" * (len(part) - 1))
+    return " ".join(masked_parts)
+
+
+def mask_email(email: Optional[str]) -> str:
+    """
+    Summary:
+        Masks the local mailbox and domain parts of an email address.
+        Example: 'elena.rostova@example.com' -> 'e***@***.com'.
+
+    Parameters:
+        email (Optional[str]): Raw email address.
+
+    Return Value:
+        str: Masked email address string.
+    """
+    if not email or not email.strip():
+        return "N/A"
+    PII_REDACTIONS_COUNTER.labels(field_type="email").inc()
+    raw = email.strip()
+    if "@" not in raw:
+        return "***@***.com"
+    local_part, domain = raw.split("@", 1)
+    masked_local = (local_part[0] + "***") if len(local_part) > 1 else "***"
+    domain_parts = domain.split(".")
+    if len(domain_parts) > 1:
+        masked_domain = "***." + domain_parts[-1]
+    else:
+        masked_domain = "***.com"
+    return f"{masked_local}@{masked_domain}"
+
+
+def normalize_phone_digits(phone: Optional[str]) -> str:
+    """
+    Summary:
+        Extracts raw normalized digits from any phone format for deterministic subscriber matching.
+        Example: '+1 (555) 234-5678' -> '5552345678'.
+
+    Parameters:
+        phone (Optional[str]): Formatted or raw phone number.
+
+    Return Value:
+        str: Cleaned digits string.
+    """
+    if not phone:
+        return ""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return digits
+
+
 def mask_phone(phone: Optional[str]) -> str:
     """
     Summary:
-        Masks middle/last digits of a phone number to shield subscriber identity.
+        Masks middle/last digits of a phone number.
         Example: '+1 (555) 234-5678' -> '+1 (555) ***-5678'.
 
     Parameters:
@@ -331,8 +406,10 @@ def mask_street_address(address: Optional[str]) -> str:
 def sanitize_customer_record(record: Dict[str, Any]) -> Dict[str, Any]:
     """
     Summary:
-        Recursively applies PII masking filters to a customer data payload.
-        Ensures raw customer details never leave the security perimeter to the LLM.
+        Sanitizes customer records for AI agent consumption.
+        In telecom operations, the Mobile or Landline number is the subscriber's
+        primary unique identity token and remains visible, while subscriber names,
+        emails, physical addresses, SSNs, and credit cards are strictly masked.
 
     Parameters:
         record (Dict[str, Any]): Dictionary containing customer fields.
@@ -342,8 +419,24 @@ def sanitize_customer_record(record: Dict[str, Any]) -> Dict[str, Any]:
     """
     sanitized = dict(record)
 
-    if "phone_number" in sanitized and sanitized["phone_number"]:
-        sanitized["phone_number"] = mask_phone(str(sanitized["phone_number"]))
+    # Subscriber names are strictly masked in AI payloads
+    if "full_name" in sanitized and sanitized["full_name"]:
+        sanitized["subscriber_name"] = mask_subscriber_name(str(sanitized.pop("full_name")))
+    elif "first_name" in sanitized or "last_name" in sanitized:
+        fname = sanitized.pop("first_name", "") or ""
+        lname = sanitized.pop("last_name", "") or ""
+        full = f"{fname} {lname}".strip()
+        sanitized["subscriber_name"] = mask_subscriber_name(full)
+
+    if "customer_name" in sanitized and sanitized["customer_name"]:
+        sanitized["customer_name"] = mask_subscriber_name(str(sanitized["customer_name"]))
+
+    # Email is masked
+    if "email" in sanitized and sanitized["email"]:
+        sanitized["email"] = mask_email(str(sanitized["email"]))
+
+    # Phone number remains visible as the subscriber's unique identity token
+    # (Do not mask phone_number)
 
     if "ssn" in sanitized and sanitized["ssn"]:
         sanitized["ssn"] = mask_ssn(str(sanitized["ssn"]))

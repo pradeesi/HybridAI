@@ -89,25 +89,29 @@ class LokiAuditClient:
         event_type: str,
         caller_identity: str,
         tool_name: str,
-        details: Dict[str, Any],
+        details: Optional[Dict[str, Any]] = None,
         status: str = "SUCCESS",
         customer_id: Optional[str] = None,
-        security_context: Optional[Dict[str, Any]] = None
+        security_context: Optional[Dict[str, Any]] = None,
+        request_payload: Optional[Dict[str, Any]] = None,
+        response_payload: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Summary:
             Emits an immutable structured audit log entry to Loki and local logs.
             Captures enterprise security context, client network telemetry,
-            trace IDs, non-repudiation identity, and compliance metadata.
+            request payload, response payload, caller identity, and tool outcome.
 
         Parameters:
             event_type (str): Type of audit event (e.g. 'MCP_TOOL_EXECUTION', 'AUTH_FAILURE').
-            caller_identity (str): Identity of the calling agent, user, or service (e.g., 'sarah.jenkins@telecom.com').
+            caller_identity (str): Identity of the calling agent, user, or service.
             tool_name (str): Name of the invoked tool or operation.
-            details (Dict[str, Any]): Additional structured event details.
+            details (Optional[Dict[str, Any]]): Additional structured event details.
             status (str): Execution status ('SUCCESS', 'FAILED', 'DENIED').
             customer_id (Optional[str]): Target customer ID if applicable.
-            security_context (Optional[Dict[str, Any]]): Comprehensive security attributes (IP, trace ID, compliance).
+            security_context (Optional[Dict[str, Any]]): Comprehensive security attributes (IP, trace ID).
+            request_payload (Optional[Dict[str, Any]]): Exact tool arguments sent by caller.
+            response_payload (Optional[Dict[str, Any]]): Exact response payload returned to caller.
 
         Return Value:
             None
@@ -125,6 +129,9 @@ class LokiAuditClient:
         trace_id = sec_ctx.get("trace_id", "N/A")
         auth_method = sec_ctx.get("auth_method", "BEARER_TOKEN")
 
+        req = request_payload if request_payload is not None else (details or {})
+        resp = response_payload if response_payload is not None else {}
+
         payload_data = {
             "timestamp": timestamp_iso,
             "event_type": event_type,
@@ -137,7 +144,9 @@ class LokiAuditClient:
             "user_agent": user_agent,
             "trace_id": trace_id,
             "auth_method": auth_method,
-            "details": details
+            "request": req,
+            "response": resp,
+            "details": details or {}
         }
         log_line = json.dumps(payload_data)
 

@@ -690,84 +690,77 @@ For clients supporting SSE transport:
   ```
 
 ### Available Custom MCP Actions:
-- `search_customer`: Quick phone/name subscriber lookup with masked PII and `agent_email` audit logging.
-- `get_customer_360`: Full profile with PII masked (address, SSN, phone) and `agent_email` audit logging.
-- `get_service_diagnostics`: Real-time ONT optical dBm signal & 5G telemetry.
-- `run_remote_device_action`: Reboot ONT or optimize Wi-Fi channels remotely.
-- `check_network_outages`: Check for area fiber cuts or tower repairs by postal code.
-- `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes with PCI-DSS masking.
-- `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
-- `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
+- `search_customer`: Fast subscriber search by Mobile or Landline phone number (or account query). The phone number remains unmasked as the unique identifier; subscriber names and sensitive PII are strictly masked.
+- `get_customer_360`: Full subscriber profile (subscriptions, devices, bills, tickets) anchored by Mobile/Landline phone number.
+- `get_service_diagnostics`: Real-time ONT optical dBm signal & 5G telemetry by subscriber phone number or service UUID.
+- `run_remote_device_action`: Remote ONT reboot or Wi-Fi optimization triggered by subscriber phone number or device UUID.
+- `check_network_outages`: Check for area fiber cuts or tower repairs by subscriber phone number or postal code.
+- `get_billing_breakdown`: Line-item charges, roaming fees, and dispute notes with masked card numbers.
+- `get_upsell_recommendations`: Personalized Gigabit / 5G pass pitch scripts by subscriber phone number.
+- `log_agent_interaction`: Saves call summary, duration, and resolution to CRM and logs audit trail.
 
-### Security & Operational Audit Architecture (Identity Propagation)
+### Security & Operational Audit Architecture (Identity Propagation & Request/Response Tracking)
 
-In enterprise contact center operations, complete accountability and auditability require capturing full technical context: every customer lookup and hardware action must record the exact agent identity, IP address, trace ID, and tool parameters.
+In enterprise contact center operations, complete accountability and auditability require capturing full technical context: every customer lookup and hardware action records the exact agent identity, IP address, trace ID, tool parameters, and full request and response payloads.
 
-#### Why User Details Initially Showed as `gemini-enterprise-agent`:
-1. **Shared Secret vs. Identity Token**: When connecting Gemini Enterprise via static Bearer Token (`telecom-mcp-secret-token...`), the Google Discovery Engine backend calls Cloud Run using this shared credential, which contains no individual user claims.
-2. **Google Identity Isolation**: To safeguard employee privacy across disparate integrations, Google Gemini Enterprise does not blindly forward the logged-in user's corporate email in standard HTTP headers unless specifically requested in the tool schema or configured via OAuth 2.0 (3LO) / Identity-Aware Proxy (IAP).
+#### Subscriber Identity Driven by Mobile / Landline Numbers:
+- **Telecom Unique Identity**: In enterprise telecommunications, the subscriber's **Mobile or Landline phone number** serves as the primary unique identifier.
+- **Strict Subscriber Privacy on AI Surface**: In MCP responses consumed by AI agents, subscriber names (`E**** R******`), emails (`e***@***.com`), street addresses, SSNs, and payment cards are strictly masked. Only the Mobile / Landline number is unmasked.
+- **Independent CRM Console**: The human Contact Center Agent has access to the independent internal CRM console (`http://localhost:8000`), where full customer names and account details are displayed so the human agent can interact respectfully and address subscriber concerns.
 
-#### Multi-Vector Identity & Telemetry Resolution:
-The FastMCP server implements a prioritized multi-vector identity resolution engine:
-1. **Tool Schema Parameter (`agent_email`)**: Each MCP action schema exposes `agent_email`. When Gemini Enterprise operates with the Telecom Agent Skill, the LLM extracts the agent's identity from the session context and explicitly supplies it in every JSON-RPC tool invocation.
-2. **Google Cloud IAP Header**: Evaluates `X-Goog-Authenticated-User-Email` (stripping `accounts.google.com:` prefix) for corporate environments using Identity-Aware Proxy.
-3. **Decoded OIDC/OAuth JWT Claims**: Decodes incoming Identity Tokens, extracting `email`, `sub` (Google Subject ID), `hd` (Hosted Domain), and `azp` (Authorized Party).
-4. **Client Network Telemetry & Distributed Tracing**:
-   - **Origin Client IP**: Extracted from `X-Forwarded-For` proxy chain.
-   - **Google Cloud Trace ID**: Extracted from `X-Cloud-Trace-Context` to correlate Grafana Loki audit streams directly with Google Cloud Logging and Cloud Trace.
-   - **Rich Audit Telemetry**: Captures caller, caller type, auth method, client IP, user agent, cloud trace ID, tool name, customer ID, and action parameters in Loki.
+#### Full Request & Response Logging in Grafana Loki:
+Every MCP tool invocation automatically captures and streams structured JSON to Grafana Loki and Cloud Logging:
+- **`request`**: The exact parameters sent to the tool (e.g. `phone_number`, `agent_email`, `query`).
+- **`response`**: The complete sanitized output returned by the tool.
+- **`caller`**: The authenticated human agent's corporate email (e.g. `admin@pradeesi.altostrat.com`).
+- **`caller_type`**: `HUMAN_AGENT` vs `SERVICE_AGENT`.
+- **`client_ip` & `trace_id`**: Real edge proxy IP and Google Cloud distributed trace context.
 
 ### Comprehensive Test Prompts for Gemini Enterprise Chat:
 
 > [!NOTE]
-> **Customer Disambiguation & Identity Verification**:
-> In enterprise telecom environments, multiple subscribers often share identical names (e.g. multiple "David Chen"s). The `search_customer` tool is designed to support both natural-language disambiguation and unique identifier lookups:
-> - **Multi-Match Handling**: If a name search returns multiple matches, the tool returns all candidate records with masked PII (`phone_masked`, `postal_code`, `accounts`). Gemini Enterprise will present the candidates to the contact center agent to confirm the caller's identity.
-> - **Direct Disambiguated Search**: Prompts can specify the **Account Number**, **Phone Number**, or **Billing Postal Code** for 100% deterministic lookup.
+> **Phone-Number-Driven Subscriber Identity**:
+> All queries from the Gemini Enterprise App are anchored by the subscriber's **Mobile or Landline phone number**. The AI assistant resolves customer equipment and active plans directly from the phone number.
 
 #### Synthetic Persona Reference Card for Contact Center Testing:
-| Subscriber Name | Account Number | Phone Number | Postal Code | Scenario Trigger |
+| Subscriber Phone Number | Masked Name | Account Number | Postal Code | Scenario Trigger |
 | :--- | :--- | :--- | :--- | :--- |
-| **Elena Rostova** | `TEL-ACC-88129` | `+1 (555) 234-5678` | `97477` | Optical line attenuation (-28.5 dBm) & ONT reboot |
-| **Marcus Vance** | `TEL-ACC-99214` | `+1 (555) 987-1234` | `94102` | Throttled 5G line (cap exceeded) & upsell pitch |
-| **Amina Al-Mansoor** | `TEL-ACC-44910` | `+1 (555) 678-4321` | `10017` | Unexpected international roaming dispute ($85 fee) |
-| **David Chen** | `TEL-ACC-11029` | `+1 (555) 312-7890` | `77092` | High bandwidth usage qualifying for 1Gbps Fiber boost |
+| **`+1 (555) 234-5678`** | `E**** R******` | `TEL-ACC-88129` | `97477` | Optical line attenuation (-28.5 dBm) & ONT reboot |
+| **`+1 (555) 987-1234`** | `M***** V****` | `TEL-ACC-99214` | `94102` | Throttled 5G line (cap exceeded) & upsell pitch |
+| **`+1 (555) 678-4321`** | `A**** A*********` | `TEL-ACC-44910` | `10017` | Unexpected international roaming dispute ($85 fee) |
+| **`+1 (555) 312-7890`** | `D**** C***` | `TEL-ACC-11029` | `77092` | High bandwidth usage qualifying for 1Gbps Fiber boost |
 
 ---
 
-#### Scenario 1: Customer 360 Lookup & Deep Diagnostics (Elena Rostova)
-* **Natural Language**:
-  > *"Elena Rostova is on the line experiencing slow broadband speeds and intermittent buffering. Can you look up her customer profile, check her line diagnostics, and recommend a resolution?"*
-* **Disambiguated (Account / Phone)**:
-  > *"Customer Elena Rostova with account number TEL-ACC-88129 (phone ending in 5678) is reporting buffering. Pull her line diagnostics and check device health."*
+#### Scenario 1: Customer 360 Lookup & Deep Diagnostics (Phone `+1 (555) 234-5678`)
+* **Phone-Driven Prompt**:
+  > *"Customer with phone +1 (555) 234-5678 is on the line experiencing slow broadband speeds and intermittent buffering. Can you look up their profile, check line diagnostics, and recommend a resolution?"*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_customer_360` &rarr; `get_service_diagnostics`
-- **Expected Outcome**: Identifies ONT hardware `ONT-HW-99281-FBR`, notes optical signal degradation (-28.5 dBm) and packet loss (14.2%), and recommends a remote ONT reboot or technician dispatch. All sensitive PII (phone, SSN, address) remains masked.
+- **Expected Outcome**: Identifies ONT hardware `ONT-HW-99281-FBR` for line `+1 (555) 234-5678`, notes optical signal degradation (-28.5 dBm) and packet loss (14.2%), and recommends a remote ONT reboot. Subscriber name is masked (`E**** R******`) while phone number is visible.
 
 #### Scenario 2: Remote Hardware Remediation (Reboot ONT Terminal)
-* **Prompt**:
-  > *"Run a remote reboot on Elena Rostova's ONT optical terminal (account TEL-ACC-88129) to restore her optical levels."*
-- **Tool Invoked Automatically**: `run_remote_device_action` (`device_id="5789bc85-d391-4b49-8893-337136c3faba"`, `action="reboot"`)
+* **Phone-Driven Prompt**:
+  > *"Run a remote reboot on the optical router for subscriber phone +1 (555) 234-5678 to restore optical levels."*
+- **Tool Invoked Automatically**: `run_remote_device_action(phone_number="+1 (555) 234-5678", action="reboot")`
 - **Expected Outcome**: Triggers remote device reboot, sets status to `HEALTHY`, logs security audit event with caller identity, and returns confirmation.
 
-#### Scenario 3: Throttled 5G Plan & Upsell Offer (Marcus Vance)
-* **Natural Language**:
-  > *"Marcus Vance is asking why his 5G mobile data has slowed to a crawl. Check his mobile usage and give me an upgrade offer I can pitch to him."*
-* **Disambiguated (Account Number)**:
-  > *"Subscriber Marcus Vance on account TEL-ACC-99214 says his data speed is capped. Check his current usage against his plan threshold and compute an upsell offer."*
+#### Scenario 3: Throttled 5G Plan & Upsell Offer (Phone `+1 (555) 987-1234`)
+* **Phone-Driven Prompt**:
+  > *"Subscriber calling from +1 (555) 987-1234 is asking why their 5G mobile data has slowed down. Check their usage and give me an upgrade offer I can pitch."*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_service_diagnostics` &rarr; `get_upsell_recommendations`
 - **Expected Outcome**: Detects throttled mobile line (54.8 GB used against 50 GB cap on 5G Essentials), retrieves the `Unlimited 5G Priority Data Pass` offer with pricing, and generates an empathetic agent pitch script.
 
-#### Scenario 4: Billing Dispute & Roaming Audit (Amina Al-Mansoor)
-* **Prompt**:
-  > *"Amina Al-Mansoor (account TEL-ACC-44910) is disputing an unexpected international roaming charge on her recent invoice. What charges were billed and what travel pass should she have used?"*
+#### Scenario 4: Billing Dispute & Roaming Audit (Phone `+1 (555) 678-4321`)
+* **Phone-Driven Prompt**:
+  > *"Subscriber with phone +1 (555) 678-4321 is disputing an unexpected international roaming charge on their recent invoice. What charges were billed and what travel pass should they have used?"*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `get_billing_breakdown`
-- **Expected Outcome**: Analyzes invoice line items, isolates $85 roaming data fee from London Heathrow, and suggests applying a one-time courtesy credit along with activating the Global Roaming Add-on ($25/mo). Card details are PCI-DSS masked.
+- **Expected Outcome**: Analyzes invoice line items, isolates $85 roaming data fee from London Heathrow, and suggests applying a one-time courtesy credit along with activating the Global Roaming Add-on ($25/mo). Card details are masked.
 
-#### Scenario 5: Infrastructure & Area Outage Detection
-* **Prompt**:
-  > *"Subscriber David Chen (postal code 98101 / 77092) is reporting internet connectivity drops. Are there any active fiber cuts or cell tower maintenance impacting his area?"*
+#### Scenario 5: Infrastructure & Area Outage Detection (Phone `+1 (555) 312-7890`)
+* **Phone-Driven Prompt**:
+  > *"Subscriber with phone +1 (555) 312-7890 is reporting connectivity drops. Are there any active fiber cuts or cell tower maintenance impacting their area?"*
 - **Tools Invoked Automatically**: `search_customer` &rarr; `check_network_outages`
-- **Expected Outcome**: Returns active fiber maintenance in Pacific Northwest Metro (98101) with estimated repair time, advising the agent to reassure the customer without dispatching an unnecessary truck roll.
+- **Expected Outcome**: Resolves subscriber postal code and returns area outage status.
 
 #### Scenario 6: Call Interaction Logging & CRM Record
 * **Prompt**:

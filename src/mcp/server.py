@@ -139,96 +139,98 @@ async def verify_auth_token(
 TOOL_DEFINITIONS = [
     {
         "name": "search_customer",
-        "description": "Finds telecom subscriber records by name, phone number, email, or account number with masked PII.",
+        "description": "Finds subscriber records by Mobile or Landline phone number (or account query). The phone number is unmasked as the unique subscriber identity; subscriber names and personal PII are strictly masked.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search keyword, subscriber phone, or account ID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number (e.g. '+1 (555) 234-5678' or digits '5552345678'). Primary unique identity."},
+                "query": {"type": "string", "description": "Alternative search keyword: phone number, account ID, or general search."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["query"]
+            }
         }
     },
     {
         "name": "get_customer_360",
-        "description": "Returns consolidated customer profile: active broadband/mobile subscriptions, equipment, recent bills, and tickets.",
+        "description": "Returns consolidated subscriber profile (active broadband/mobile subscriptions, equipment, recent bills, and tickets) driven by Mobile or Landline phone number. Subscriber name is strictly masked.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_id": {"type": "string", "description": "Customer UUID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number used as primary identity."},
+                "customer_id": {"type": "string", "description": "Internal Customer UUID (optional if phone_number is supplied)."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["customer_id"]
+            }
         }
     },
     {
         "name": "get_service_diagnostics",
-        "description": "Runs remote line diagnostics for Home Broadband ONT or Mobile 5G lines. Returns dBm signal, packet loss, and recommended fix.",
+        "description": "Runs remote line diagnostics for Home Broadband ONT or Mobile 5G lines. Accepts subscriber phone number or subscription UUID. Returns dBm signal, packet loss, and recommended fix.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "service_id": {"type": "string", "description": "Subscription UUID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to automatically diagnose their active service."},
+                "service_id": {"type": "string", "description": "Subscription UUID (optional if phone_number is supplied)."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["service_id"]
+            }
         }
     },
     {
         "name": "run_remote_device_action",
-        "description": "Executes remote maintenance commands on customer hardware: 'reboot', 'channel_optimization', or 'ping_sweep'.",
+        "description": "Executes remote maintenance commands on customer hardware: 'reboot', 'channel_optimization', or 'ping_sweep'. Accepts subscriber phone number or device UUID.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "device_id": {"type": "string", "description": "Device UUID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to locate and reboot premise equipment."},
+                "device_id": {"type": "string", "description": "Hardware device UUID (optional if phone_number is supplied)."},
                 "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
-            "required": ["device_id", "action"]
+            "required": ["action"]
         }
     },
     {
         "name": "check_network_outages",
-        "description": "Checks for ongoing infrastructure fiber cuts or 5G cell tower maintenance in a given postal area.",
+        "description": "Checks for ongoing infrastructure fiber cuts or 5G cell tower maintenance in a given postal area or for a subscriber's phone number.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "postal_code": {"type": "string", "description": "Customer 5-digit postal code"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to resolve their service area."},
+                "postal_code": {"type": "string", "description": "Customer 5-digit postal code (optional if phone_number is supplied)."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["postal_code"]
+            }
         }
     },
     {
         "name": "get_billing_breakdown",
-        "description": "Returns itemized invoice records, roaming fees, and payment status with PCI-DSS masked card numbers.",
+        "description": "Returns itemized invoice records, roaming fees, and payment status with masked card numbers. Accepts subscriber phone number or account ID.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "account_id": {"type": "string", "description": "Account UUID or Account Number"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number."},
+                "account_id": {"type": "string", "description": "Account UUID or Account Number (optional if phone_number is supplied)."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["account_id"]
+            }
         }
     },
     {
         "name": "get_upsell_recommendations",
-        "description": "Computes personalized upgrade offers (Gigabit fiber, Unlimited 5G pass, Roaming bundle) and provides agent pitch scripts.",
+        "description": "Computes personalized upgrade offers (Gigabit fiber, Unlimited 5G pass, Roaming bundle) and provides agent pitch scripts. Identified by subscriber phone number or UUID.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_id": {"type": "string", "description": "Customer UUID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number."},
+                "customer_id": {"type": "string", "description": "Customer UUID (optional if phone_number is supplied)."},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
-            },
-            "required": ["customer_id"]
+            }
         }
     },
     {
         "name": "log_agent_interaction",
-        "description": "Logs agent call notes, resolution status, and upsell outcome directly into the CRM database and compliance audit trail.",
+        "description": "Logs agent call notes, resolution status, and upsell outcome directly into the CRM database and audit trail. Identified by subscriber phone number or UUID.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "customer_id": {"type": "string", "description": "Customer UUID"},
+                "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number."},
+                "customer_id": {"type": "string", "description": "Customer UUID (optional if phone_number is supplied)."},
                 "agent_name": {"type": "string", "description": "Agent name or ID"},
                 "issue_summary": {"type": "string", "description": "Problem described by customer"},
                 "resolution_summary": {"type": "string", "description": "Solution provided"},
@@ -237,7 +239,7 @@ TOOL_DEFINITIONS = [
                 "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"},
                 "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
-            "required": ["customer_id", "issue_summary", "resolution_summary"]
+            "required": ["issue_summary", "resolution_summary"]
         }
     }
 ]
