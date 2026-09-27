@@ -1,7 +1,7 @@
 name: "telecom-agent"
 acli_version: "1.0.0"
 agent_directory: "app"
-region: "us-east1"
+region: "europe-west1"
 base_template: "adk"
 generated_at: "2026-09-27T10:51:07.928058+00:00"
 language: "python"
