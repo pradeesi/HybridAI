@@ -3,6 +3,7 @@
 FROM grafana/grafana:10.4.0
 
 USER root
+RUN apk add --no-cache curl jq
 COPY deploy/grafana/provisioning /etc/grafana/provisioning
 COPY deploy/grafana/dashboards /var/lib/grafana/dashboards
 COPY deploy/grafana/entrypoint.sh /entrypoint.sh

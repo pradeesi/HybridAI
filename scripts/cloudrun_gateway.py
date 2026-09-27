@@ -84,48 +84,54 @@ async def sync_grafana_iam_tokens():
     while True:
         try:
             # Mint audience token for Prometheus
-            prom_cmd = ["gcloud", "auth", "print-identity-token", f"--impersonate-service-account={sa_email}", f"--audiences={prom_url}"]
+            prom_cmd = ["gcloud", "auth", "print-identity-token", "--quiet", f"--impersonate-service-account={sa_email}", f"--audiences={prom_url}"]
             prom_res = subprocess.run(prom_cmd, capture_output=True, text=True)
-            prom_token = prom_res.stdout.strip().splitlines()[-1] if prom_res.returncode == 0 else ""
+            prom_token = prom_res.stdout.strip().splitlines()[-1] if prom_res.returncode == 0 and prom_res.stdout.strip() else ""
 
             # Mint audience token for Loki
-            loki_cmd = ["gcloud", "auth", "print-identity-token", f"--impersonate-service-account={sa_email}", f"--audiences={loki_url}"]
+            loki_cmd = ["gcloud", "auth", "print-identity-token", "--quiet", f"--impersonate-service-account={sa_email}", f"--audiences={loki_url}"]
             loki_res = subprocess.run(loki_cmd, capture_output=True, text=True)
-            loki_token = loki_res.stdout.strip().splitlines()[-1] if loki_res.returncode == 0 else ""
+            loki_token = loki_res.stdout.strip().splitlines()[-1] if loki_res.returncode == 0 and loki_res.stdout.strip() else ""
 
             async with httpx.AsyncClient(timeout=15.0) as client:
                 if prom_token:
-                    await client.put(
+                    p_resp = await client.put(
                         "http://127.0.0.1:3000/api/datasources/uid/PBFA97CFB590B2093",
                         auth=("admin", "telecom_admin"),
                         json={
                             "name": "Prometheus",
                             "type": "prometheus",
+                            "uid": "PBFA97CFB590B2093",
                             "access": "proxy",
                             "url": prom_url,
                             "jsonData": {"httpHeaderName1": "Authorization"},
                             "secureJsonData": {"httpHeaderValue1": f"Bearer {prom_token}"}
                         }
                     )
+                    if p_resp.status_code >= 400:
+                        print(f"[Gateway] Warning: Prometheus datasource update failed: {p_resp.status_code} {p_resp.text}")
                 if loki_token:
-                    await client.put(
+                    l_resp = await client.put(
                         "http://127.0.0.1:3000/api/datasources/uid/P8E80F9AEF21F6940",
                         auth=("admin", "telecom_admin"),
                         json={
                             "name": "Loki",
                             "type": "loki",
+                            "uid": "P8E80F9AEF21F6940",
                             "access": "proxy",
                             "url": loki_url,
                             "jsonData": {"httpHeaderName1": "Authorization"},
                             "secureJsonData": {"httpHeaderValue1": f"Bearer {loki_token}"}
                         }
                     )
+                    if l_resp.status_code >= 400:
+                        print(f"[Gateway] Warning: Loki datasource update failed: {l_resp.status_code} {l_resp.text}")
             print("[Gateway] Synchronized Grafana IAM tokens for Prometheus & Loki datasources (via UID).")
         except Exception as e:
             print(f"[Gateway] Warning: Failed to sync Grafana IAM tokens: {e}")
 
-        # Refresh every 30 minutes (OIDC tokens are valid for 60 minutes)
-        await asyncio.sleep(1800)
+        # Refresh every 10 minutes (OIDC tokens are valid for 60 minutes)
+        await asyncio.sleep(600)
 
 
 async def main():

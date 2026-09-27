@@ -9,7 +9,7 @@ mkdir -p /tmp/grafana /tmp/grafana/plugins /tmp/grafana/logs
 # Start background sync to inject Cloud Run IAM ID tokens into Prometheus and Loki datasources
 (
   # Wait until Grafana is ready
-  while ! wget -q -O - http://127.0.0.1:3000/api/health >/dev/null 2>&1; do
+  while ! curl -s -f http://127.0.0.1:3000/api/health >/dev/null 2>&1; do
     sleep 2
   done
 
@@ -17,31 +17,31 @@ mkdir -p /tmp/grafana /tmp/grafana/plugins /tmp/grafana/logs
 
   while true; do
     if [ -n "$PROMETHEUS_URL" ]; then
-      PROM_TOKEN=$(wget -q -O - --header="Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${PROMETHEUS_URL}" 2>/dev/null || true)
+      PROM_TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${PROMETHEUS_URL}" 2>/dev/null || true)
       if [ -n "$PROM_TOKEN" ]; then
-        wget -q -O - --method=PUT \
-          --header="Content-Type: application/json" \
-          --header="Authorization: Basic $(echo -n admin:telecom_admin | base64)" \
-          --body-data="{\"name\":\"Prometheus\",\"type\":\"prometheus\",\"access\":\"proxy\",\"url\":\"${PROMETHEUS_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${PROM_TOKEN}\"}}" \
+        curl -s -X PUT \
+          -u admin:telecom_admin \
+          -H "Content-Type: application/json" \
+          -d "{\"name\":\"Prometheus\",\"type\":\"prometheus\",\"uid\":\"PBFA97CFB590B2093\",\"access\":\"proxy\",\"url\":\"${PROMETHEUS_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${PROM_TOKEN}\"}}" \
           "http://127.0.0.1:3000/api/datasources/uid/PBFA97CFB590B2093" >/dev/null 2>&1 || true
         echo "[Entrypoint] Injected fresh IAM token for Prometheus datasource."
       fi
     fi
 
     if [ -n "$LOKI_URL" ]; then
-      LOKI_TOKEN=$(wget -q -O - --header="Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${LOKI_URL}" 2>/dev/null || true)
+      LOKI_TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${LOKI_URL}" 2>/dev/null || true)
       if [ -n "$LOKI_TOKEN" ]; then
-        wget -q -O - --method=PUT \
-          --header="Content-Type: application/json" \
-          --header="Authorization: Basic $(echo -n admin:telecom_admin | base64)" \
-          --body-data="{\"name\":\"Loki\",\"type\":\"loki\",\"access\":\"proxy\",\"url\":\"${LOKI_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${LOKI_TOKEN}\"}}" \
+        curl -s -X PUT \
+          -u admin:telecom_admin \
+          -H "Content-Type: application/json" \
+          -d "{\"name\":\"Loki\",\"type\":\"loki\",\"uid\":\"P8E80F9AEF21F6940\",\"access\":\"proxy\",\"url\":\"${LOKI_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${LOKI_TOKEN}\"}}" \
           "http://127.0.0.1:3000/api/datasources/uid/P8E80F9AEF21F6940" >/dev/null 2>&1 || true
         echo "[Entrypoint] Injected fresh IAM token for Loki datasource."
       fi
     fi
 
-    # Refresh every 30 minutes
-    sleep 1800
+    # Refresh every 10 minutes (OIDC ID tokens expire in 60 minutes)
+    sleep 600
   done
 ) &
 

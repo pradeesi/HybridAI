@@ -18,6 +18,8 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from src.core.audit import audit_client
 from src.core.config import settings
 from src.core.security import (
+    AUTH_FAILURES_COUNTER,
+    PII_REDACTIONS_COUNTER,
     decode_jwt_unverified,
     extract_caller_identity,
     extract_security_context,
@@ -27,6 +29,7 @@ from src.core.security import (
 from src.db.database import init_db
 from src.db.seed_data import seed_synthetic_telecom_data
 from src.mcp.tools import (
+    TOOL_CALL_COUNTER,
     check_network_outages_tool,
     get_billing_breakdown_tool,
     get_customer_360_tool,
@@ -45,10 +48,18 @@ async def lifespan(app: FastAPI):
     """
     Summary:
         Handles startup and shutdown lifecycle events for the MCP server.
+        Initializes SQLite database tables, seeds synthetic enterprise records,
+        and primes baseline Prometheus metric families for instant dashboard visibility.
     """
     logger.info("Initializing MCP Server database and synthetic records...")
     await init_db()
     await seed_synthetic_telecom_data()
+
+    # Prime Prometheus metric series with 0-values so metrics appear immediately on cold boots
+    TOOL_CALL_COUNTER.labels(tool_name="system_ready", status="SUCCESS").inc(0)
+    PII_REDACTIONS_COUNTER.labels(field_type="init").inc(0)
+    AUTH_FAILURES_COUNTER.inc(0)
+
     yield
     logger.info("Shutting down MCP Server resources...")
     await audit_client.close()
