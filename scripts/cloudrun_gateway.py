@@ -14,12 +14,12 @@ import uvicorn
 
 # Map local port to target Cloud Run service URL
 SERVICES: Dict[int, str] = {
-    8000: "https://telecom-crm-console-eniyhtobkq-ew.a.run.app",
-    8080: "https://telecom-crm-console-eniyhtobkq-ew.a.run.app",
-    3000: "https://telecom-grafana-eniyhtobkq-ew.a.run.app",
-    9090: "https://telecom-prometheus-eniyhtobkq-ew.a.run.app",
-    8001: "https://telecom-mcp-server-eniyhtobkq-ew.a.run.app",
-    3100: "https://telecom-loki-eniyhtobkq-ew.a.run.app",
+    8000: "https://telecom-crm-console-1111937452.europe-west1.run.app",
+    8080: "https://telecom-crm-console-1111937452.europe-west1.run.app",
+    3000: "https://telecom-grafana-1111937452.europe-west1.run.app",
+    9090: "https://telecom-prometheus-1111937452.europe-west1.run.app",
+    8001: "https://telecom-mcp-server-1111937452.europe-west1.run.app",
+    3100: "https://telecom-loki-1111937452.europe-west1.run.app",
 }
 
 # In-memory cached token with timestamp
@@ -75,51 +75,64 @@ async def sync_grafana_datasources() -> None:
     Summary:
         Periodically provisions and updates Grafana datasources (Loki & Prometheus)
         with fresh Google IAM Bearer tokens to prevent authorization errors.
+        Dynamically discovers datasource IDs and current versions to eliminate 409 Conflict errors.
     """
     # Wait for the local gateway proxy servers to initialize
-    await asyncio.sleep(3)
+    await asyncio.sleep(2)
     while True:
         try:
             token = get_id_token()
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # 1. Update Loki datasource
-                await client.put(
-                    "http://127.0.0.1:3000/api/datasources/2",
-                    json={
-                        "id": 2,
-                        "uid": "P8E80F9AEF21F6940",
-                        "orgId": 1,
-                        "name": "Loki",
-                        "type": "loki",
-                        "access": "proxy",
-                        "url": SERVICES[3100],
-                        "jsonData": {"httpHeaderName1": "Authorization"},
-                        "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
-                        "version": 1
-                    }
-                )
-                # 2. Update Prometheus datasource
-                await client.put(
-                    "http://127.0.0.1:3000/api/datasources/1",
-                    json={
-                        "id": 1,
-                        "uid": "PBFA97CFB590B2093",
-                        "orgId": 1,
-                        "name": "Prometheus",
-                        "type": "prometheus",
-                        "access": "proxy",
-                        "url": SERVICES[9090],
-                        "jsonData": {"httpHeaderName1": "Authorization"},
-                        "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
-                        "version": 1
-                    }
-                )
-                print("[Gateway] Synced Grafana datasources (Loki & Prometheus) with fresh IAM token.")
+                res = await client.get("http://127.0.0.1:3000/api/datasources")
+                if res.status_code == 200:
+                    datasources = res.json()
+                    for ds in datasources:
+                        ds_id = ds.get("id")
+                        ds_name = ds.get("name")
+                        ds_type = ds.get("type")
+                        ds_ver = ds.get("version", 1)
+                        ds_uid = ds.get("uid")
+
+                        if ds_type == "loki" or ds_name == "Loki":
+                            put_payload = {
+                                "id": ds_id,
+                                "uid": ds_uid,
+                                "orgId": 1,
+                                "name": "Loki",
+                                "type": "loki",
+                                "access": "proxy",
+                                "url": SERVICES[3100],
+                                "jsonData": {"httpHeaderName1": "Authorization"},
+                                "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
+                                "version": ds_ver
+                            }
+                            resp = await client.put(f"http://127.0.0.1:3000/api/datasources/{ds_id}", json=put_payload)
+                            if resp.status_code not in (200, 204):
+                                print(f"[Gateway] Loki datasource update notice: {resp.status_code}")
+
+                        elif ds_type == "prometheus" or ds_name == "Prometheus":
+                            put_payload = {
+                                "id": ds_id,
+                                "uid": ds_uid,
+                                "orgId": 1,
+                                "name": "Prometheus",
+                                "type": "prometheus",
+                                "access": "proxy",
+                                "url": SERVICES[9090],
+                                "jsonData": {"httpHeaderName1": "Authorization"},
+                                "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
+                                "version": ds_ver
+                            }
+                            resp = await client.put(f"http://127.0.0.1:3000/api/datasources/{ds_id}", json=put_payload)
+                            if resp.status_code not in (200, 204):
+                                print(f"[Gateway] Prometheus datasource update notice: {resp.status_code}")
+
+                    print("[Gateway] Synced Grafana datasources (Loki & Prometheus) with fresh IAM token.")
         except Exception as exc:
             print(f"[Gateway] Background datasource sync warning: {exc}")
 
-        # Automatically refresh every 30 minutes before token expiration
-        await asyncio.sleep(1800)
+        # Automatically refresh every 2 minutes so tokens never expire
+        await asyncio.sleep(120)
 
 
 async def main():
