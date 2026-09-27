@@ -88,8 +88,7 @@ class TestSecurityAndPII(unittest.TestCase):
         self.assertEqual(ctx["caller_identity"], "admin@pradeesi.altostrat.com")
         self.assertEqual(ctx["caller_type"], "HUMAN_AGENT")
         self.assertEqual(ctx["client_ip"], "173.194.96.179")
-        self.assertEqual(ctx["trace_id"], "1d78db52281b503501f0dcc110a0d99b")
-        self.assertIn("CPNI-FCC-Part-64", ctx["compliance_regimes"])
+        self.assertEqual(ctx["auth_method"], "IAM_EDGE_PERIMETER")
 
 
 class TestMCPToolsAndDatabase(unittest.IsolatedAsyncioTestCase):

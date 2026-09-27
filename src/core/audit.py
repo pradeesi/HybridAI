@@ -124,11 +124,6 @@ class LokiAuditClient:
         user_agent = sec_ctx.get("user_agent", "N/A")
         trace_id = sec_ctx.get("trace_id", "N/A")
         auth_method = sec_ctx.get("auth_method", "BEARER_TOKEN")
-        compliance_regimes = sec_ctx.get(
-            "compliance_regimes",
-            ["CPNI-FCC-Part-64", "PCI-DSS-v4.0", "GDPR-Art-30", "SOC-2-CC6"]
-        )
-        data_classification = sec_ctx.get("data_classification", "RESTRICTED_CUSTOMER_OPERATIONS")
 
         payload_data = {
             "timestamp": timestamp_iso,
@@ -142,11 +137,6 @@ class LokiAuditClient:
             "user_agent": user_agent,
             "trace_id": trace_id,
             "auth_method": auth_method,
-            "compliance": {
-                "regimes": compliance_regimes,
-                "data_classification": data_classification,
-                "non_repudiation": "VERIFIED_AGENT" if caller_type == "HUMAN_AGENT" else "SERVICE_SHARED"
-            },
             "details": details
         }
         log_line = json.dumps(payload_data)

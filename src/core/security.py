@@ -236,10 +236,7 @@ def extract_security_context(
         "client_ip": effective_ip,
         "user_agent": hdr.get("user-agent", "Unknown-Agent/1.0"),
         "trace_id": trace_id,
-        "auth_method": auth_method,
-        "compliance_regimes": ["CPNI-FCC-Part-64", "PCI-DSS-v4.0", "GDPR-Art-30", "SOC-2-CC6"],
-        "data_classification": "RESTRICTED_CUSTOMER_OPERATIONS",
-        "non_repudiation": "VERIFIED_AGENT" if caller_type == "HUMAN_AGENT" else "SERVICE_SHARED"
+        "auth_method": auth_method
     }
 
 

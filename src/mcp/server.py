@@ -144,7 +144,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search keyword, subscriber phone, or account ID"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["query"]
         }
@@ -156,7 +156,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "customer_id": {"type": "string", "description": "Customer UUID"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["customer_id"]
         }
@@ -168,7 +168,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "service_id": {"type": "string", "description": "Subscription UUID"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["service_id"]
         }
@@ -181,7 +181,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "device_id": {"type": "string", "description": "Device UUID"},
                 "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["device_id", "action"]
         }
@@ -193,7 +193,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "postal_code": {"type": "string", "description": "Customer 5-digit postal code"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["postal_code"]
         }
@@ -205,7 +205,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "account_id": {"type": "string", "description": "Account UUID or Account Number"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["account_id"]
         }
@@ -217,7 +217,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "customer_id": {"type": "string", "description": "Customer UUID"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["customer_id"]
         }
@@ -235,7 +235,7 @@ TOOL_DEFINITIONS = [
                 "call_duration_sec": {"type": "integer", "description": "Call duration in seconds"},
                 "upsell_offered": {"type": "boolean", "description": "Was an upsell offer pitched"},
                 "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for compliance and audit non-repudiation."}
+                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
             },
             "required": ["customer_id", "issue_summary", "resolution_summary"]
         }

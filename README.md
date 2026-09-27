@@ -699,9 +699,9 @@ For clients supporting SSE transport:
 - `get_upsell_recommendations`: Automated Gigabit / 5G pass pitch scripts.
 - `log_agent_interaction`: Saves call summary, duration, and resolution to CRM.
 
-### Security, Compliance & Non-Repudiation Architecture (Identity Propagation)
+### Security & Operational Audit Architecture (Identity Propagation)
 
-In enterprise customer care, strict regulatory frameworks (**FCC CPNI Part 64**, **PCI-DSS v4.0**, **GDPR Article 30**, and **SOC 2 Type II CC6**) require immutable non-repudiation: every customer lookup and hardware reboot must be cryptographically tied to the exact human agent who authorized it.
+In enterprise contact center operations, complete accountability and auditability require capturing full technical context: every customer lookup and hardware action must record the exact agent identity, IP address, trace ID, and tool parameters.
 
 #### Why User Details Initially Showed as `gemini-enterprise-agent`:
 1. **Shared Secret vs. Identity Token**: When connecting Gemini Enterprise via static Bearer Token (`telecom-mcp-secret-token...`), the Google Discovery Engine backend calls Cloud Run using this shared credential, which contains no individual user claims.
@@ -715,7 +715,7 @@ The FastMCP server implements a prioritized multi-vector identity resolution eng
 4. **Client Network Telemetry & Distributed Tracing**:
    - **Origin Client IP**: Extracted from `X-Forwarded-For` proxy chain.
    - **Google Cloud Trace ID**: Extracted from `X-Cloud-Trace-Context` to correlate Grafana Loki audit streams directly with Google Cloud Logging and Cloud Trace.
-   - **Compliance Regimes**: Automatically tags records with `CPNI`, `PCI-DSS-v4.0`, `GDPR`, and `SOC-2`.
+   - **Rich Audit Telemetry**: Captures caller, caller type, auth method, client IP, user agent, cloud trace ID, tool name, customer ID, and action parameters in Loki.
 
 ### Comprehensive Test Prompts for Gemini Enterprise Chat:
 
