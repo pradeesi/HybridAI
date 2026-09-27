@@ -1,0 +1,8 @@
+# Purpose: Cloud Build configuration to build only Grafana for Google Cloud Run.
+# Architecture/Context: Packages Grafana dashboards, datasources, and entrypoint.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-grafana:latest', '-f', 'deploy/grafana/Dockerfile', '.']
+
+images:
+  - 'europe-west1-docker.pkg.dev/pradeesi-ai-demo/hybrid-ai-repo/telecom-grafana:latest'

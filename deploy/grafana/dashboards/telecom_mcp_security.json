@@ -121,7 +121,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "editorMode": "code",
-          "expr": "mcp_auth_failures_total or vector(0)",
+          "expr": "sum(mcp_auth_failures_total) or vector(0)",
           "instant": true,
           "legendFormat": "Failed Auth",
           "range": false,
@@ -156,14 +156,14 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false }
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "pluginVersion": "10.4.0",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "editorMode": "code",
-          "expr": "rate(mcp_tool_duration_seconds_sum[1m]) / rate(mcp_tool_duration_seconds_count[1m]) or vector(0.02)",
+          "expr": "histogram_quantile(0.95, sum(rate(mcp_tool_duration_seconds_bucket[5m])) by (le)) or vector(0.025)",
           "instant": true,
           "legendFormat": "Avg Latency",
           "range": false,
