@@ -158,6 +158,7 @@ install_and_start_portainer() {
     # Deploy Portainer CE container
     # Portainer web dashboard binds to 9443 (HTTPS) and 9000 (HTTP).
     # Host port 8000 (Portainer edge agent tunnel) is omitted to avoid conflict with the Telecom CRM console.
+    # The --no-setup-token flag disables the manual log token prompt on new Portainer CE installations.
     log_info "Provisioning portainer/portainer-ce:latest container via ${DOCKER_CMD}..."
     ${DOCKER_CMD} run -d \
         -p 9000:9000 \
@@ -166,7 +167,8 @@ install_and_start_portainer() {
         --restart=always \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v portainer_data:/data \
-        portainer/portainer-ce:latest
+        portainer/portainer-ce:latest \
+        --no-setup-token
 
     log_success "Portainer CE container launched successfully."
 }
@@ -419,6 +421,11 @@ display_service_summary() {
     echo ""
     echo -e "${CYAN}${BOLD}--- Web Portals & Microservices ---${NC}"
     printf "  %-30s %s\n" "Portainer CE Web Dashboard:" "https://${HOST_IP}:9443 (or http://${HOST_IP}:9000)"
+    local portainer_token
+    portainer_token=$(${DOCKER_CMD} logs portainer 2>&1 | grep -oE 'setup_token=[a-zA-Z0-9_-]+' | cut -d'=' -f2 | tail -n 1 || true)
+    if [ -n "${portainer_token}" ]; then
+        printf "  %-30s %s\n" "  -> Portainer Setup Token:" "${portainer_token}"
+    fi
     printf "  %-30s %s\n" "CRM Contact Center Console:" "http://${HOST_IP}:8000"
     printf "  %-30s %s\n" "FastMCP Server JSON-RPC:"   "http://${HOST_IP}:8001/mcp"
     printf "  %-30s %s\n" "FastMCP Server Health:"     "http://${HOST_IP}:8001/health"
