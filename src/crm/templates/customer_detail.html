@@ -94,7 +94,7 @@
                   {% set display_pct = 100 if usage_pct > 100 else usage_pct %}
                   <div class="progress" style="height: 8px;">
                     <div class="progress-bar {% if usage_pct >= 100 %}bg-danger{% elif usage_pct > 80 %}bg-warning{% else %}bg-primary{% endif %}" 
-                         role="progressbar" style="width: {{ display_pct }}%;"></div>
+                         role="progressbar" data-progress="{{ display_pct }}"></div>
                   </div>
                   {% if usage_pct >= 100 %}
                     <small class="text-danger fw-bold mt-1 d-block">
@@ -165,11 +165,13 @@
     </div>
 
     <!-- Billing & Disputes -->
+    <!-- Billing & Disputes -->
     <div class="card card-elevated bg-white">
-      <div class="card-header bg-white py-3">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
-          <i class="bi bi-credit-card text-primary"></i> Billing History & Invoices
+          <i class="bi bi-credit-card text-primary"></i> Billing History &amp; Invoices (Last 6 Months)
         </h5>
+        <span class="badge bg-secondary-subtle text-secondary small">Click any invoice to view masked statement</span>
       </div>
       <div class="card-body">
         <div class="table-responsive">
@@ -183,13 +185,14 @@
                 <th>Total</th>
                 <th>Status</th>
                 <th>Dispute Note</th>
+                <th class="text-end">Statement</th>
               </tr>
             </thead>
             <tbody>
               {% for acc in customer.accounts %}
                 {% for b in acc.billing_records %}
-                <tr>
-                  <td>{{ b.invoice_month }}</td>
+                <tr style="cursor: pointer;" onclick="loadInvoice('{{ b.id }}')" title="Click to view detailed itemized statement">
+                  <td class="fw-bold">{{ b.invoice_month }}</td>
                   <td>${{ "%.2f"|format(b.base_charges) }}</td>
                   <td>
                     {% if b.roaming_charges > 0 %}
@@ -199,7 +202,7 @@
                     {% endif %}
                   </td>
                   <td>${{ "%.2f"|format(b.taxes) }}</td>
-                  <td class="fw-bold">${{ "%.2f"|format(b.total_amount) }}</td>
+                  <td class="fw-bold text-dark">${{ "%.2f"|format(b.total_amount) }}</td>
                   <td>
                     <span class="badge {% if b.payment_status == 'PAID' %}bg-success{% else %}bg-warning text-dark{% endif %}">
                       {{ b.payment_status }}
@@ -213,6 +216,11 @@
                       <span class="text-muted">None</span>
                     {% endif %}
                   </td>
+                  <td class="text-end">
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 d-inline-flex align-items-center gap-1" onclick="event.stopPropagation(); loadInvoice('{{ b.id }}')">
+                      <i class="bi bi-receipt"></i> Statement
+                    </button>
+                  </td>
                 </tr>
                 {% endfor %}
               {% endfor %}
@@ -225,17 +233,31 @@
 
   <!-- Right Column: Upsell Engine & Call Logging -->
   <div class="col-lg-4">
-    <!-- Gemini Enterprise Assistant Helper -->
-    <div class="card card-elevated bg-primary text-white mb-4">
-      <div class="card-body">
-        <h6 class="fw-bold d-flex align-items-center gap-2">
-          <i class="bi bi-lightning-charge-fill"></i> Gemini Enterprise AI Assist
+    <!-- Quick Actions & Diagnostic Summary Card -->
+    <div class="card card-elevated bg-white mb-4">
+      <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+          <i class="bi bi-person-check-fill text-primary"></i> Subscriber Quick Info
         </h6>
-        <p class="small mb-2">
-          Paste this query in your GE App window to instantly trigger remote diagnosis:
-        </p>
-        <div class="p-2 bg-dark rounded font-monospace small user-select-all" style="font-size: 0.78rem;">
-          Customer {{ customer.first_name }} {{ customer.last_name }} (ID: {{ customer.id }}) is experiencing service issues. Run get_service_diagnostics and check for outages in postal code {{ customer.postal_code }}.
+      </div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-muted">Verified Phone:</span>
+          <span class="font-monospace fw-bold">{{ phone_masked }}</span>
+        </div>
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-muted">SSN Token:</span>
+          <span class="font-monospace text-secondary">{{ ssn_masked }}</span>
+        </div>
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-muted">Location:</span>
+          <span>{{ customer.city }}, {{ customer.state }} ({{ customer.postal_code }})</span>
+        </div>
+        <div class="d-flex justify-content-between py-1">
+          <span class="text-muted">Loyalty Status:</span>
+          <span class="badge {% if customer.loyalty_tier == 'Platinum' %}bg-primary{% elif customer.loyalty_tier == 'Gold' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+            {{ customer.loyalty_tier }}
+          </span>
         </div>
       </div>
     </div>
@@ -312,10 +334,162 @@
     </div>
   </div>
 </div>
+
+<!-- Itemized Bill Statement Modal (PII Masked) -->
+<div class="modal fade" id="invoiceModal" tabindex="-1" aria-labelledby="invoiceModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content shadow-lg border-0">
+      <div class="modal-header bg-dark text-white py-3">
+        <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="invoiceModalLabel">
+          <i class="bi bi-receipt-cutoff text-primary"></i> Customer Billing Statement
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4" id="invoiceModalBody">
+        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="fs-4 fw-bold text-primary">TELECOM 360</span>
+              <span class="badge bg-secondary-subtle text-secondary border">OFFICIAL INVOICE</span>
+            </div>
+            <p class="text-muted small mb-0 mt-1">Telecom Global Carrier Services Inc. &bull; Enterprise &amp; Residential Division</p>
+          </div>
+          <div class="text-end">
+            <h6 class="fw-bold mb-0 text-dark" id="modalInvoiceId">INV-2026-08-00000</h6>
+            <div class="text-muted small" id="modalBillingPeriod">Period: 2026-08-01 to 2026-08-28</div>
+            <div class="mt-1">
+              <span class="badge bg-success" id="modalPaymentStatus">PAID</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <!-- Billed To (Masked PII) -->
+          <div class="col-sm-6">
+            <div class="p-3 bg-light rounded border h-100">
+              <h6 class="fw-bold text-uppercase small text-secondary mb-2">
+                <i class="bi bi-person-badge"></i> Billed Subscriber (Masked PII)
+              </h6>
+              <div class="fw-bold text-dark fs-6" id="modalSubscriberName">Subscriber Name</div>
+              <div class="text-muted small mt-1">
+                <div><i class="bi bi-telephone"></i> <span id="modalPhoneNumber">+1 (555) ***-****</span></div>
+                <div><i class="bi bi-geo-alt"></i> <span id="modalStreetAddress">*** ***, City, State</span></div>
+                <div><i class="bi bi-envelope"></i> <span id="modalEmail">***@***.***</span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Account & Payment Method -->
+          <div class="col-sm-6">
+            <div class="p-3 bg-light rounded border h-100">
+              <h6 class="fw-bold text-uppercase small text-secondary mb-2">
+                <i class="bi bi-credit-card"></i> Account &amp; Settlement Info
+              </h6>
+              <div class="small">
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Account Number:</span>
+                  <strong class="font-monospace" id="modalAccountNumber">ACC-********</strong>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Subscription Plan:</span>
+                  <strong id="modalPlanName">Standard Telecom Plan</strong>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Settlement Card:</span>
+                  <span class="font-monospace text-dark fw-bold" id="modalPaymentCard">**** **** **** 0000</span>
+                </div>
+                <div class="d-flex justify-content-between py-1">
+                  <span class="text-muted">AutoPay Status:</span>
+                  <span class="badge bg-success-subtle text-success border border-success">ENROLLED</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dispute Warning Alert if applicable -->
+        <div id="modalDisputeAlert" class="alert alert-danger py-2 small d-none mb-3">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+            <div>
+              <strong>Active Billing Dispute:</strong> <span id="modalDisputeStatusBadge" class="badge bg-danger ms-1">UNDER_REVIEW</span>
+              <div id="modalDisputeNotes" class="mt-1">Customer disputing roaming charges incurred during travel.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Line Item Breakdown Table -->
+        <div class="table-responsive mb-3">
+          <table class="table table-bordered align-middle mb-0">
+            <thead class="table-light small text-uppercase">
+              <tr>
+                <th>Description</th>
+                <th>Billing Cycle</th>
+                <th class="text-end">Amount</th>
+              </tr>
+            </thead>
+            <tbody class="small">
+              <tr>
+                <td>
+                  <div class="fw-bold" id="modalLineItemPlan">Monthly Base Recurring Charges</div>
+                  <div class="text-muted" style="font-size: 0.75rem;">Standard service allotment, unlimited text/voice/fiber connectivity</div>
+                </td>
+                <td id="modalLineItemCycle">2026-08</td>
+                <td class="text-end fw-semibold" id="modalBaseCharges">$0.00</td>
+              </tr>
+              <tr id="modalRoamingRow">
+                <td>
+                  <div class="fw-bold text-danger">International Roaming &amp; Out-of-Zone Usage</div>
+                  <div class="text-muted" style="font-size: 0.75rem;">Roaming cellular data sessions and partner network interconnects</div>
+                </td>
+                <td id="modalRoamingCycle">2026-08</td>
+                <td class="text-end fw-semibold text-danger" id="modalRoamingCharges">$0.00</td>
+              </tr>
+              <tr id="modalExtraRow">
+                <td>
+                  <div class="fw-bold">Value-Added Services &amp; Hardware Lease</div>
+                  <div class="text-muted" style="font-size: 0.75rem;">ONT/Gateway modem equipment rental fee</div>
+                </td>
+                <td id="modalExtraCycle">2026-08</td>
+                <td class="text-end fw-semibold" id="modalExtraCharges">$0.00</td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="fw-bold text-muted">Government Regulatory Taxes &amp; Surcharges</div>
+                  <div class="text-muted" style="font-size: 0.75rem;">State telecom excise, universal service fund, municipal 911 fees</div>
+                </td>
+                <td id="modalTaxesCycle">2026-08</td>
+                <td class="text-end fw-semibold" id="modalTaxes">$0.00</td>
+              </tr>
+              <tr class="table-light fs-6">
+                <td colspan="2" class="text-end fw-bold">Total Statement Amount:</td>
+                <td class="text-end fw-bold text-primary fs-5" id="modalTotalAmount">$0.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-2 bg-light rounded border text-muted small text-center">
+          <i class="bi bi-shield-check text-success"></i> Customer PII (Phone, Street Address, SSN, Credit Card) has been dynamically masked in compliance with PCI-DSS &amp; Carrier Privacy Regulations.
+        </div>
+      </div>
+      <div class="modal-footer bg-light py-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+          <i class="bi bi-printer"></i> Print Statement
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Set dynamic progress bar widths
+  document.querySelectorAll('.progress-bar[data-progress]').forEach(el => {
+    el.style.width = el.dataset.progress + '%';
+  });
+
   // Simple live timer for call handling
   let seconds = 0;
   const timerElement = document.getElementById('callTimer');
@@ -328,5 +502,69 @@
     timerElement.textContent = `${mins}:${secs}`;
     durationInput.value = seconds;
   }, 1000);
+
+  // Fetch and display itemized invoice modal with masked PII
+  async function loadInvoice(billingId) {
+    try {
+      const res = await fetch(`/api/invoices/${billingId}`);
+      if (!res.ok) {
+        alert('Could not fetch invoice details.');
+        return;
+      }
+      const data = await res.json();
+
+      document.getElementById('modalInvoiceId').textContent = data.invoice_id;
+      document.getElementById('modalBillingPeriod').textContent = `Period: ${data.billing_period}`;
+
+      const statusBadge = document.getElementById('modalPaymentStatus');
+      statusBadge.textContent = data.payment_status;
+      if (data.payment_status === 'PAID') {
+        statusBadge.className = 'badge bg-success';
+      } else {
+        statusBadge.className = 'badge bg-warning text-dark';
+      }
+
+      document.getElementById('modalSubscriberName').textContent = data.customer.subscriber_name;
+      document.getElementById('modalPhoneNumber').textContent = data.customer.phone_number;
+      document.getElementById('modalStreetAddress').textContent = data.customer.street_address;
+      document.getElementById('modalEmail').textContent = data.customer.email;
+
+      document.getElementById('modalAccountNumber').textContent = data.account.account_number;
+      document.getElementById('modalPlanName').textContent = data.account.plan_name;
+      document.getElementById('modalPaymentCard').textContent = data.account.payment_card;
+
+      document.getElementById('modalLineItemPlan').textContent = `${data.account.plan_name} - Monthly Service`;
+      document.getElementById('modalLineItemCycle').textContent = data.invoice_month;
+      document.getElementById('modalBaseCharges').textContent = `$${data.charges.base_charges.toFixed(2)}`;
+
+      document.getElementById('modalRoamingCycle').textContent = data.invoice_month;
+      document.getElementById('modalRoamingCharges').textContent = `$${data.charges.roaming_charges.toFixed(2)}`;
+
+      document.getElementById('modalExtraCycle').textContent = data.invoice_month;
+      document.getElementById('modalExtraCharges').textContent = `$${data.charges.extra_charges.toFixed(2)}`;
+
+      document.getElementById('modalTaxesCycle').textContent = data.invoice_month;
+      document.getElementById('modalTaxes').textContent = `$${data.charges.taxes.toFixed(2)}`;
+
+      document.getElementById('modalTotalAmount').textContent = `$${data.charges.total_amount.toFixed(2)}`;
+
+      // Dispute alert handling
+      const disputeAlert = document.getElementById('modalDisputeAlert');
+      if (data.dispute_status && data.dispute_status !== 'NONE') {
+        disputeAlert.classList.remove('d-none');
+        document.getElementById('modalDisputeStatusBadge').textContent = data.dispute_status;
+        document.getElementById('modalDisputeNotes').textContent = data.dispute_notes || 'Customer inquiry submitted for this charge cycle.';
+      } else {
+        disputeAlert.classList.add('d-none');
+      }
+
+      const modalEl = document.getElementById('invoiceModal');
+      const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      bsModal.show();
+    } catch (err) {
+      console.error('Failed to load invoice:', err);
+      alert('Error loading invoice details.');
+    }
+  }
 </script>
 {% endblock %}

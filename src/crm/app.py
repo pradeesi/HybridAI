@@ -1,6 +1,6 @@
 """
 Purpose: Customer Care CRM Frontline Agent Console (FastAPI + Jinja2 + Local Bootstrap 5).
-Architecture/Context: Visual interface rendered on the contact center executive's workstation alongside Gemini Enterprise App.
+Architecture/Context: Standalone visual interface for contact center executives providing subscriber 360 views, device diagnostics, and itemized billing.
 Dependencies/Side Effects: Serves local static assets, queries database models, interacts with remote device actions and Loki audit logger.
 """
 
@@ -16,10 +16,17 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from src.core.config import settings
-from src.core.security import mask_phone, mask_ssn
+from src.core.security import (
+    mask_credit_card,
+    mask_email,
+    mask_phone,
+    mask_ssn,
+    mask_street_address,
+    mask_subscriber_name,
+)
 from src.db.database import AsyncSessionLocal, init_db
 from src.db.models import (
-    Account, CallInteraction, Customer, Device,
+    Account, BillingRecord, CallInteraction, Customer, Device,
     NetworkOutage, Subscription, SupportTicket, UpsellOffer
 )
 from src.db.seed_data import seed_synthetic_telecom_data
@@ -52,6 +59,14 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="src/crm/static"), name="static")
 
 templates = Jinja2Templates(directory="src/crm/templates")
+
+# Register enterprise PII masking functions globally for templates
+templates.env.globals["mask_phone"] = mask_phone
+templates.env.globals["mask_ssn"] = mask_ssn
+templates.env.globals["mask_credit_card"] = mask_credit_card
+templates.env.globals["mask_email"] = mask_email
+templates.env.globals["mask_street_address"] = mask_street_address
+templates.env.globals["mask_subscriber_name"] = mask_subscriber_name
 
 
 @app.get("/health")
@@ -189,6 +204,10 @@ async def customer_360(request: Request, customer_id: str):
         if not customer:
             raise HTTPException(status_code=404, detail="Customer record not found.")
 
+        # Sort billing records chronologically descending (newest first)
+        for acc in customer.accounts:
+            acc.billing_records.sort(key=lambda b: b.invoice_month, reverse=True)
+
         # Load upsell offers
         stmt_offers = select(UpsellOffer)
         offers_res = await session.execute(stmt_offers)
@@ -207,6 +226,60 @@ async def customer_360(request: Request, customer_id: str):
             "upsell_offers": upsell_offers
         }
     )
+
+
+@app.get("/api/invoices/{billing_id}")
+async def get_invoice_details(billing_id: str):
+    """
+    Summary:
+        Returns sanitized, itemized billing invoice information with masked PII
+        (phone, address, card, subscriber name).
+    """
+    async with AsyncSessionLocal() as session:
+        stmt = (
+            select(BillingRecord)
+            .options(
+                selectinload(BillingRecord.account).selectinload(Account.customer),
+                selectinload(BillingRecord.account).selectinload(Account.subscriptions)
+            )
+            .where(BillingRecord.id == billing_id)
+        )
+        res = await session.execute(stmt)
+        bill = res.scalar_one_or_none()
+        if not bill:
+            raise HTTPException(status_code=404, detail="Invoice record not found.")
+
+        acc = bill.account
+        cust = acc.customer
+        sub = acc.subscriptions[0] if acc.subscriptions else None
+
+        return {
+            "invoice_id": f"INV-{bill.invoice_month}-{acc.account_number[-5:]}",
+            "billing_record_id": bill.id,
+            "invoice_month": bill.invoice_month,
+            "billing_period": f"{bill.invoice_month}-01 to {bill.invoice_month}-28",
+            "customer": {
+                "subscriber_name": mask_subscriber_name(f"{cust.first_name} {cust.last_name}"),
+                "phone_number": mask_phone(cust.phone_number),
+                "street_address": f"{mask_street_address(cust.street_address)}, {cust.city}, {cust.state} ({cust.postal_code[:2]}***)",
+                "email": mask_email(cust.email)
+            },
+            "account": {
+                "account_number": f"{acc.account_number[:8]}***",
+                "payment_card": mask_credit_card(acc.payment_method_card),
+                "plan_name": sub.plan_name if sub else "Standard Telecom Plan"
+            },
+            "charges": {
+                "base_charges": bill.base_charges,
+                "roaming_charges": bill.roaming_charges,
+                "extra_charges": bill.extra_charges,
+                "taxes": bill.taxes,
+                "total_amount": bill.total_amount
+            },
+            "payment_status": bill.payment_status,
+            "dispute_status": bill.dispute_status,
+            "dispute_notes": bill.dispute_notes
+        }
 
 
 @app.post("/devices/{device_id}/action")

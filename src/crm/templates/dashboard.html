@@ -9,7 +9,7 @@
     <div class="card card-elevated bg-white p-3 d-flex flex-row justify-content-between align-items-center">
       <div>
         <h4 class="mb-1 fw-bold text-dark">Telecom Frontline Agent Workspace</h4>
-        <p class="text-muted mb-0 small">Dual-Pane Agent Assist Mode: Keep this console open alongside the Google Gemini Enterprise App.</p>
+        <p class="text-muted mb-0 small">Frontline Operations &amp; Subscriber 360 Diagnostic Console</p>
       </div>
       <div class="d-flex gap-2">
         <a href="http://localhost:3000" target="_blank" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1">
@@ -129,22 +129,22 @@
     </div>
   </div>
 
-  <!-- Right Pane: Gemini Enterprise Integration & Compliance Card -->
+  <!-- Right Pane: Gateway & Compliance Status -->
   <div class="col-lg-4">
-    <!-- GE App Integration Info -->
+    <!-- FastMCP Gateway & Security Status -->
     <div class="card card-elevated bg-white mb-4">
-      <div class="card-header bg-primary text-white py-3">
+      <div class="card-header bg-dark text-white py-3">
         <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
-          <i class="bi bi-robot"></i> Gemini Enterprise App Assist
+          <i class="bi bi-shield-check text-success"></i> FastMCP Gateway Status
         </h5>
       </div>
       <div class="card-body">
         <p class="small text-muted">
-          Connect your Gemini Enterprise App to this local MCP server over Server-Sent Events (SSE).
+          Direct Model Context Protocol (MCP) server endpoints exposing CRM telemetry, diagnostics, and billing tools.
         </p>
 
         <div class="mb-3">
-          <label class="form-label small fw-bold text-uppercase text-secondary">MCP SSE Endpoint</label>
+          <label class="form-label small fw-bold text-uppercase text-secondary">MCP SSE Stream Endpoint</label>
           <div class="input-group input-group-sm">
             <input type="text" class="form-control font-monospace" value="http://localhost:8001/sse" readonly>
           </div>
@@ -158,20 +158,13 @@
           </div>
         </div>
 
-        <div class="alert alert-info py-2 small mb-3">
-          <strong>Security Guardrail Active:</strong>
+        <div class="alert alert-info py-2 small mb-0">
+          <strong>Security Guardrails Active:</strong>
           <ul class="mb-0 ps-3 mt-1">
-            <li>Strict Bearer Token verification</li>
-            <li>Dynamic PII masking before response</li>
+            <li>Strict Bearer Token verification on all tools</li>
+            <li>Dynamic PII masking before response output</li>
             <li>Immutable audit stream dispatched to Loki</li>
           </ul>
-        </div>
-
-        <div class="small">
-          <strong class="d-block mb-1">Sample GE Agent Prompt:</strong>
-          <div class="p-2 bg-light border rounded font-monospace small">
-            "Elena Rostova is on the line complaining about buffering. Check her line diagnostics and recommend a fix."
-          </div>
         </div>
       </div>
     </div>
