@@ -18,11 +18,11 @@ RUN pip install --no-cache-dir uv==0.8.13
 
 WORKDIR /code
 
-COPY ./pyproject.toml ./uv.lock* ./
+COPY ./pyproject.toml ./
 
 COPY ./app ./app
 
-RUN uv sync --frozen
+RUN uv sync --no-cache
 
 ARG COMMIT_SHA=""
 ENV COMMIT_SHA=${COMMIT_SHA}
