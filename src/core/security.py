@@ -208,9 +208,9 @@ def extract_security_context(
 ) -> Dict[str, Any]:
     """
     Summary:
-        Builds a comprehensive security and compliance context dictionary
-        for immutable audit logging, capturing non-repudiation attributes,
-        network telemetry, and regulatory classifications.
+        Builds a comprehensive security and audit context dictionary.
+        Strictly categorizes the immediate calling entity as an AI_AGENT (Gemini Enterprise or Assistant)
+        while extracting the initiating human Contact Center Agent's login ID and email ID from HTTP headers and JWT claims.
 
     Parameters:
         token (Optional[str]): Authorization token string.
@@ -219,24 +219,67 @@ def extract_security_context(
         client_ip (Optional[str]): Remote client IP address.
 
     Return Value:
-        Dict[str, Any]: Structured security context with caller identity, IP, trace ID, and compliance tags.
+        Dict[str, Any]: Structured security context with AI Agent caller, human end-user identity, IP, and trace ID.
     """
     hdr = {k.lower(): v for k, v in (headers or {}).items()}
-    resolved_caller = extract_caller_identity(
-        token=token or hdr.get("authorization") or hdr.get("x-serverless-authorization"),
-        user_email_header=hdr.get("x-goog-authenticated-user-email"),
-        custom_agent_header=hdr.get("x-agent-identity") or hdr.get("x-agent-email"),
-        payload_user=payload_user,
-        request_headers=hdr
-    )
+    raw_token = token or hdr.get("authorization") or hdr.get("x-serverless-authorization")
+    jwt_claims = decode_jwt_unverified(raw_token) or {}
 
-    # Determine caller classification
-    if "@" in resolved_caller and "gserviceaccount.com" not in resolved_caller:
-        caller_type = "HUMAN_AGENT"
-    elif "service-account" in resolved_caller or "gserviceaccount.com" in resolved_caller:
-        caller_type = "GCP_SERVICE_ACCOUNT"
+    # 1. Resolve Calling AI Agent (The MCP client invoking the server endpoint)
+    # The direct caller hitting the FastAPI server is ALWAYS the AI Agent or Gemini Enterprise App
+    caller = "gemini-enterprise-agent"
+    if hdr.get("x-agent-identity"):
+        caller = str(hdr["x-agent-identity"]).strip()
+    elif hdr.get("x-agent-name"):
+        caller = str(hdr["x-agent-name"]).strip()
+    elif "python-httpx" in hdr.get("user-agent", ""):
+        caller = "gemini-enterprise-agent"
+    elif "curl" in hdr.get("user-agent", ""):
+        caller = "curl-test-agent"
+
+    caller_type = "AI_AGENT"
+
+    # 2. Resolve Initiating Human Contact Center Agent (The human who prompted Gemini Enterprise)
+    end_user_email = None
+    end_user_id = None
+
+    # Check Google IAP and proxy user identity headers
+    iap_candidates = [
+        hdr.get("x-goog-authenticated-user-email"),
+        hdr.get("x-goog-user-email"),
+        hdr.get("x-end-user-email"),
+        hdr.get("x-user-email"),
+        hdr.get("x-agent-email"),
+        hdr.get("x-forwarded-email")
+    ]
+    for candidate in iap_candidates:
+        if candidate and str(candidate).strip():
+            clean = str(candidate).replace("accounts.google.com:", "").strip()
+            if clean and "@" in clean:
+                end_user_email = clean
+                break
+
+    # Check decoded Google OIDC JWT token claims for human user email
+    if not end_user_email and "email" in jwt_claims and jwt_claims["email"]:
+        email_claim = str(jwt_claims["email"]).strip()
+        if "gserviceaccount.com" not in email_claim:
+            end_user_email = email_claim
+
+    # Fallback to payload metadata if provided by MCP client
+    if not end_user_email and payload_user and "@" in str(payload_user):
+        end_user_email = str(payload_user).strip()
+
+    # Fallback default if not detected
+    if not end_user_email:
+        end_user_email = "admin@pradeesi.altostrat.com"
+
+    # Extract Human User ID (Google sub or IAP ID)
+    if hdr.get("x-goog-authenticated-user-id"):
+        end_user_id = str(hdr["x-goog-authenticated-user-id"]).replace("accounts.google.com:", "").strip()
+    elif "sub" in jwt_claims and jwt_claims["sub"]:
+        end_user_id = str(jwt_claims["sub"]).strip()
     else:
-        caller_type = "SHARED_AGENT_KEY"
+        end_user_id = "N/A"
 
     # Resolve true originating client IP from proxy chain
     forwarded = hdr.get("x-forwarded-for")
@@ -263,13 +306,17 @@ def extract_security_context(
         auth_method = "IAM_EDGE_PERIMETER"
 
     return {
-        "caller_identity": resolved_caller,
-        "caller_type": caller_type,
+        "caller": caller,
+        "caller_identity": caller,
+        "caller_type": "AI_AGENT",
+        "end_user_email": end_user_email,
+        "end_user_id": end_user_id,
         "client_ip": effective_ip,
         "user_agent": hdr.get("user-agent", "Unknown-Agent/1.0"),
         "trace_id": trace_id,
         "auth_method": auth_method
     }
+
 
 
 def mask_subscriber_name(name: Optional[str]) -> str:

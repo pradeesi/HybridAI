@@ -46,24 +46,22 @@ def _resolve_effective_caller(
 ) -> str:
     """
     Summary:
-        Determines the most accurate identity for audit trails.
-        Prioritizes verified user email from arguments, security context, or fallback caller ID.
+        Determines the calling entity for audit trails.
+        The direct caller is always the AI Agent / Gemini Enterprise application.
 
     Parameters:
         caller_id (str): Default caller identifier.
-        agent_email (Optional[str]): Explicit user email provided in tool call.
+        agent_email (Optional[str]): Explicit user email provided in tool call (if any).
         security_context (Optional[Dict[str, Any]]): Request-level security context.
 
     Return Value:
-        str: Resolved caller identity string.
+        str: Resolved AI Agent caller identity string.
     """
-    if agent_email and str(agent_email).strip():
-        return str(agent_email).strip()
-    if security_context and security_context.get("caller_identity"):
-        ctx_id = security_context["caller_identity"]
-        if ctx_id and not str(ctx_id).startswith("gemini-enterprise-agent (Shared"):
-            return str(ctx_id).strip()
-    return caller_id
+    if security_context and security_context.get("caller"):
+        return str(security_context["caller"]).strip()
+    if caller_id and not str(caller_id).startswith("admin@"):
+        return str(caller_id).strip()
+    return "gemini-enterprise-agent"
 
 
 async def _resolve_customer(

@@ -431,28 +431,27 @@ async def _process_single_mcp_message(
                 "error": {"code": -32601, "message": f"Method not found: {tool_name}"}
             }
 
-        # Check for explicit agent email in arguments or metadata
+        # Check for human operator metadata in arguments or MCP _meta payload
         meta = params.get("_meta", {}) or payload.get("_meta", {}) or {}
         explicit_user = (
-            tool_args.get("agent_email")
-            or tool_args.get("caller_user")
-            or tool_args.get("agent_name")
-            or meta.get("user")
+            meta.get("user")
             or meta.get("user_email")
             or meta.get("agent_email")
+            or tool_args.get("agent_email")
+            or tool_args.get("caller_user")
         )
         if explicit_user and isinstance(explicit_user, str) and explicit_user.strip():
-            caller_id = explicit_user.strip()
             if security_context:
-                security_context["caller_identity"] = caller_id
-                if "@" in caller_id and "gserviceaccount" not in caller_id:
-                    security_context["caller_type"] = "HUMAN_AGENT"
+                security_context["end_user_email"] = explicit_user.strip()
+
+        # The direct caller is strictly the AI Agent invoking this tool
+        agent_caller = security_context.get("caller", "gemini-enterprise-agent") if security_context else "gemini-enterprise-agent"
 
         handler = TOOL_HANDLER_MAP[tool_name]
         try:
             tool_result = await handler(
                 **tool_args,
-                caller_id=caller_id,
+                caller_id=agent_caller,
                 security_context=security_context
             )
             return {

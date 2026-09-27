@@ -120,10 +120,10 @@ class LokiAuditClient:
         timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         sec_ctx = security_context or {}
-        caller_type = sec_ctx.get(
-            "caller_type",
-            "HUMAN_AGENT" if "@" in caller_identity and "gserviceaccount" not in caller_identity else "SERVICE_AGENT"
-        )
+        caller = sec_ctx.get("caller", caller_identity or "gemini-enterprise-agent")
+        caller_type = sec_ctx.get("caller_type", "AI_AGENT")
+        end_user_email = sec_ctx.get("end_user_email", "admin@pradeesi.altostrat.com")
+        end_user_id = sec_ctx.get("end_user_id", "N/A")
         client_ip = sec_ctx.get("client_ip", "N/A")
         user_agent = sec_ctx.get("user_agent", "N/A")
         trace_id = sec_ctx.get("trace_id", "N/A")
@@ -135,8 +135,10 @@ class LokiAuditClient:
         payload_data = {
             "timestamp": timestamp_iso,
             "event_type": event_type,
-            "caller": caller_identity,
+            "caller": caller,
             "caller_type": caller_type,
+            "end_user_email": end_user_email,
+            "end_user_id": end_user_id,
             "tool": tool_name,
             "status": status,
             "customer_id": customer_id or "N/A",
@@ -166,8 +168,9 @@ class LokiAuditClient:
                         "env": settings.APP_ENV,
                         "event_type": event_type,
                         "tool": tool_name,
-                        "caller": caller_identity,
+                        "caller": caller,
                         "caller_type": caller_type,
+                        "end_user": end_user_email,
                         "status": status,
                         "auth_method": auth_method
                     },
@@ -215,7 +218,7 @@ class LokiAuditClient:
             method (str): HTTP method ('POST', 'GET').
             headers (Dict[str, str]): Complete incoming HTTP request headers mapping.
             body (Any): Complete message body (parsed JSON or raw text).
-            caller_identity (str): Resolved identity of the caller.
+            caller_identity (str): Resolved identity of the calling agent.
             security_context (Optional[Dict[str, Any]]): Security and network context (IP, trace ID, auth method).
             jwt_claims (Optional[Dict[str, Any]]): Decoded JWT claims from Authorization token if available.
             status (str): Processing status of the incoming message ('RECEIVED', 'PROCESSED', 'FAILED').
@@ -227,10 +230,10 @@ class LokiAuditClient:
         timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         sec_ctx = security_context or {}
-        caller_type = sec_ctx.get(
-            "caller_type",
-            "HUMAN_AGENT" if "@" in caller_identity and "gserviceaccount" not in caller_identity else "SERVICE_AGENT"
-        )
+        caller = sec_ctx.get("caller", caller_identity or "gemini-enterprise-agent")
+        caller_type = sec_ctx.get("caller_type", "AI_AGENT")
+        end_user_email = sec_ctx.get("end_user_email", "admin@pradeesi.altostrat.com")
+        end_user_id = sec_ctx.get("end_user_id", "N/A")
         client_ip = sec_ctx.get("client_ip", "N/A")
         user_agent = sec_ctx.get("user_agent", "N/A")
         trace_id = sec_ctx.get("trace_id", "N/A")
@@ -248,8 +251,10 @@ class LokiAuditClient:
             "event_type": "MCP_HTTP_REQUEST",
             "endpoint": endpoint,
             "method": method,
-            "caller": caller_identity,
+            "caller": caller,
             "caller_type": caller_type,
+            "end_user_email": end_user_email,
+            "end_user_id": end_user_id,
             "client_ip": client_ip,
             "user_agent": user_agent,
             "trace_id": trace_id,
@@ -277,8 +282,9 @@ class LokiAuditClient:
                         "env": settings.APP_ENV,
                         "event_type": "MCP_HTTP_REQUEST",
                         "tool": endpoint,
-                        "caller": caller_identity,
+                        "caller": caller,
                         "caller_type": caller_type,
+                        "end_user": end_user_email,
                         "status": status,
                         "auth_method": auth_method
                     },

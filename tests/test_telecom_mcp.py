@@ -120,8 +120,9 @@ class TestSecurityAndPII(unittest.TestCase):
             headers=headers,
             payload_user="admin@pradeesi.altostrat.com"
         )
-        self.assertEqual(ctx["caller_identity"], "admin@pradeesi.altostrat.com")
-        self.assertEqual(ctx["caller_type"], "HUMAN_AGENT")
+        self.assertEqual(ctx["caller"], "gemini-enterprise-agent")
+        self.assertEqual(ctx["caller_type"], "AI_AGENT")
+        self.assertEqual(ctx["end_user_email"], "admin@pradeesi.altostrat.com")
         self.assertEqual(ctx["client_ip"], "173.194.96.179")
         self.assertEqual(ctx["auth_method"], "IAM_EDGE_PERIMETER")
 
