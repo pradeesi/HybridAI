@@ -345,12 +345,23 @@ Choose the playbook that fits your target environment:
    ```
 
 4. **Clone Repository & Launch All 6 Services**:
+
+   **Option A: Automated One-Shot Deployment Script (Recommended)**
+   *Runs Docker prerequisite checks, installs Docker/Compose if missing, bootstraps all containers, performs health verification and end-to-end tool execution tests, and displays all access URLs:*
+   ```bash
+   git clone https://github.com/pradeesi/HybridAI.git
+   cd HybridAI
+   chmod +x scripts/deploy_proxmox.sh
+   ./scripts/deploy_proxmox.sh
+   ```
+
+   **Option B: Manual Docker Compose Launch**
    ```bash
    git clone https://github.com/pradeesi/HybridAI.git
    cd HybridAI
    cp .env.example .env
 
-   # Launch all 6 services with a single command:
+   # Launch all 6 services with Docker Compose:
    docker compose up -d --build
    ```
 
