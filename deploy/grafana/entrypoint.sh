@@ -20,7 +20,7 @@ mkdir -p /tmp/grafana /tmp/grafana/plugins /tmp/grafana/logs
       PROM_TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${PROMETHEUS_URL}" 2>/dev/null || true)
       if [ -n "$PROM_TOKEN" ]; then
         curl -s -X PUT \
-          -u admin:telecom_admin \
+          -u "${GF_SECURITY_ADMIN_USER:-admin}:${GF_SECURITY_ADMIN_PASSWORD:-telecom_admin}" \
           -H "Content-Type: application/json" \
           -d "{\"name\":\"Prometheus\",\"type\":\"prometheus\",\"uid\":\"PBFA97CFB590B2093\",\"access\":\"proxy\",\"url\":\"${PROMETHEUS_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${PROM_TOKEN}\"}}" \
           "http://127.0.0.1:3000/api/datasources/uid/PBFA97CFB590B2093" >/dev/null 2>&1 || true
@@ -32,7 +32,7 @@ mkdir -p /tmp/grafana /tmp/grafana/plugins /tmp/grafana/logs
       LOKI_TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${LOKI_URL}" 2>/dev/null || true)
       if [ -n "$LOKI_TOKEN" ]; then
         curl -s -X PUT \
-          -u admin:telecom_admin \
+          -u "${GF_SECURITY_ADMIN_USER:-admin}:${GF_SECURITY_ADMIN_PASSWORD:-telecom_admin}" \
           -H "Content-Type: application/json" \
           -d "{\"name\":\"Loki\",\"type\":\"loki\",\"uid\":\"P8E80F9AEF21F6940\",\"access\":\"proxy\",\"url\":\"${LOKI_URL}\",\"jsonData\":{\"httpHeaderName1\":\"Authorization\"},\"secureJsonData\":{\"httpHeaderValue1\":\"Bearer ${LOKI_TOKEN}\"}}" \
           "http://127.0.0.1:3000/api/datasources/uid/P8E80F9AEF21F6940" >/dev/null 2>&1 || true

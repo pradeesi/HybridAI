@@ -5,6 +5,7 @@ Architecture/Context: Bridges local browser requests on ports 8000, 3000, 9090, 
 Dependencies/Side Effects: Binds to 127.0.0.1 on ports 8000 (CRM), 3000 (Grafana), 9090 (Prometheus), 8001 (MCP), 3100 (Loki).
 """
 import asyncio
+import os
 import subprocess
 import time
 from typing import Dict
@@ -93,11 +94,15 @@ async def sync_grafana_iam_tokens():
             loki_res = subprocess.run(loki_cmd, capture_output=True, text=True)
             loki_token = loki_res.stdout.strip().splitlines()[-1] if loki_res.returncode == 0 and loki_res.stdout.strip() else ""
 
+            grafana_user = os.getenv("GRAFANA_ADMIN_USER", "admin")
+            grafana_pass = os.getenv("GRAFANA_ADMIN_PASSWORD", os.getenv("GF_SECURITY_ADMIN_PASSWORD", "telecom_admin"))
+            grafana_auth = (grafana_user, grafana_pass)
+
             async with httpx.AsyncClient(timeout=15.0) as client:
                 if prom_token:
                     p_resp = await client.put(
                         "http://127.0.0.1:3000/api/datasources/uid/PBFA97CFB590B2093",
-                        auth=("admin", "telecom_admin"),
+                        auth=grafana_auth,
                         json={
                             "name": "Prometheus",
                             "type": "prometheus",
@@ -113,7 +118,7 @@ async def sync_grafana_iam_tokens():
                 if loki_token:
                     l_resp = await client.put(
                         "http://127.0.0.1:3000/api/datasources/uid/P8E80F9AEF21F6940",
-                        auth=("admin", "telecom_admin"),
+                        auth=grafana_auth,
                         json={
                             "name": "Loki",
                             "type": "loki",
