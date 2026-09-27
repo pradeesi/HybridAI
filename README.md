@@ -16,61 +16,70 @@ Built with **Python 3.11+ (FastAPI)**, **Jinja2**, **HTML5**, **locally stored B
 
 ## 1. Application Architecture
 
-The platform supports a synchronized **Dual-Pane Agent Workflow**:
+The platform supports an enterprise **Dual-Tier Hybrid AI Architecture**:
 
-1. **Telecom CRM Agent Console**: Frontline desktop web interface displaying subscriber 360 profiles, live equipment telemetry (optical Rx power dBm, Wi-Fi interference, packet loss), billing history, and one-click remote diagnostic triggers.
-2. **Google Gemini Enterprise App (GE App)**: Interacts with the **FastMCP Server** over an encrypted SSE connection. It queries subscriber diagnostics, checks area outages, computes personalized upgrade pitches, and analyzes billing disputes.
+1. **Autonomous Telecom ADK Agent (GCP Agent Runtime)**:
+   - Built with the **Google Agent Development Kit (ADK)** and registered directly into the **Google Gemini Enterprise App (GE App)**.
+   - Deployed on **Google Cloud Agent Runtime (Vertex AI Reasoning Engines)** with native Google Identity / IAM authentication.
+   - Strictly bounded to the 8 telecom MCP tools, rejecting all out-of-scope requests.
+   - Observability: Monitored via Google Cloud-native logging, Cloud Trace, and Vertex AI telemetry. **The ADK Agent does not write directly to Prometheus or Loki.** Instead, it injects authenticated Google Identity claims (`X-Goog-Authenticated-User-Email`), trace IDs, and agent identifiers into its HTTP tool calls to the MCP server.
+
+2. **Hardened Telecom FastMCP & Support Infrastructure**:
+   - Deployed flexibly either to **Google Cloud Run** or **On-Premises on a Proxmox VE Server** (via Docker Compose).
+   - Houses the FastMCP server, the Customer Care CRM Console, PostgreSQL database, and on-prem compliance stack (Prometheus, Loki, Grafana).
+   - Observability: Captures the security context passed by the ADK agent, streams immutable audit trails to **Grafana Loki**, and exposes live operational metrics to **Prometheus**.
 
 ```mermaid
 graph TD
-    subgraph AgentWorkstation["Contact Center Executive Workstation"]
-        Agent["Human Frontline Agent (Voice / Screen)"]
-        CRM_UI["Telecom CRM Console (Port 8000)"]
-        GE_App["Google Gemini Enterprise App"]
+    subgraph GeminiEnterprise["Google Workspace / Gemini Enterprise Tier"]
+        AgentUser["Human Frontline Agent (Google Identity Login)"]
+        GE_App["Gemini Enterprise App Interface"]
     end
 
-    subgraph PlatformPerimeter["Containerized Platform Boundary (Edge / Cloud)"]
+    subgraph GCPAgentRuntime["GCP Agent Runtime (Vertex AI Reasoning Engines)"]
+        ADK_Agent["Telecom ADK Agent (telecom_agent)"]
+        ADK_Scope["Strict Scope Guard (8 MCP Tools Only)"]
+        Header_Enricher["Security & Compliance Header Enricher"]
+        GCP_Logging["GCP Cloud Logging & Cloud Trace"]
+    end
+
+    subgraph HybridMCPBoundary["FastMCP & Support Tier (Cloud Run OR On-Prem Proxmox VE)"]
         AuthGuard["Bearer Token Security & PII Redactor"]
+        MCP_Server["FastMCP Server (Port 8001 / SSE & JSON-RPC)"]
+        CRM_Backend["Telecom CRM Console (Port 8000)"]
+        PG[(PostgreSQL 16 Telecom DB)]
         
-        subgraph AppServices["Application Tier"]
-            MCP_Server["FastMCP Server (Port 8001 / SSE & JSON-RPC)"]
-            CRM_Backend["CRM Application Service"]
-        end
-
-        subgraph DataTier["Persistence Tier"]
-            PG[(PostgreSQL 16 Telecom Relational DB / SQLite Fallback)]
-        end
-
-        subgraph TelemetryTier["Observability & Compliance Tier"]
-            Prometheus["Prometheus 2.50+ (Port 9090)"]
-            Loki["Grafana Loki 3.0+ (Port 3100)"]
-            Grafana["Grafana 10.4+ (Port 3000)"]
+        subgraph ComplianceObservability["On-Prem / Cloud Compliance Stack"]
+            Prometheus["Prometheus (Port 9090)"]
+            Loki["Grafana Loki (Port 3100)"]
+            Grafana["Grafana Dashboards (Port 3000)"]
         end
     end
 
-    Agent -->|Navigates Customer Profile| CRM_UI
-    Agent -->|Queries AI Assistant| GE_App
-    CRM_UI --> CRM_Backend
-    GE_App -->|SSE /tools/call + Bearer Auth| AuthGuard
+    AgentUser -->|Prompts in Natural Language| GE_App
+    GE_App -->|Google Identity OIDC Session| ADK_Agent
+    ADK_Agent --> ADK_Scope
+    ADK_Agent -.->|Internal Agent Telemetry| GCP_Logging
+    ADK_Agent -->|Enriches with User Email, Trace ID, Agent ID| Header_Enricher
+    Header_Enricher -->|HTTP JSON-RPC /mcp| AuthGuard
     AuthGuard --> MCP_Server
+
+    MCP_Server -->|Diagnostics, Queries, Actions| PG
+    CRM_Backend -->|CRM Queries & Notes| PG
     
-    MCP_Server -->|Query & Device Actions| PG
-    CRM_Backend -->|Query & Notes| PG
-    
-    MCP_Server -->|Structured Audit Trail| Loki
-    CRM_Backend -->|Audit Trail| Loki
-    MCP_Server -->|Metrics /metrics| Prometheus
-    CRM_Backend -->|Metrics /metrics| Prometheus
+    MCP_Server -->|Immutable Audit Logs with User Identity| Loki
+    MCP_Server -->|Invocation Metrics & Latency /metrics| Prometheus
     Prometheus --> Grafana
     Loki --> Grafana
 ```
 
 ### Architectural & Security Pillars
-- **Zero-Trust Token Authentication**: All incoming MCP SSE streams and tool executions must present an `Authorization: Bearer <MCP_AUTH_TOKEN>` header.
-- **Dynamic PII Masking & PCI Compliance**: Phone numbers, Social Security Numbers, physical addresses, and payment card numbers are automatically redacted before LLM context ingestion.
-- **Immutable Audit Logging**: Every tool call (caller identity, tool parameters, accessed customer IDs, execution latency, and security status) is streamed to Grafana Loki.
-- **Air-Gapped / Zero CDN Dependency**: Bootstrap 5 CSS, Bootstrap Icons, and JavaScript are vendored locally in `src/crm/static/` to ensure zero third-party tracking or CDN outages.
-- **Universal Portability**: 100% environment-driven configuration—deployable with zero changes across standalone Python environments, local Docker, on-prem bare-metal hypervisors, and Google Cloud.
+- **Strict Domain Boundary**: The ADK Agent operates exclusively through the 8 defined telecom MCP tools. Unrelated requests (general coding, weather, trivia) are deterministically rejected with a standard compliance refusal message.
+- **Enterprise Identity Propagation**: End-user Google Identity emails (`admin@pradeesi.altostrat.com`) and distributed trace contexts are forwarded from Gemini Enterprise through the ADK agent to the MCP backend on every request.
+- **Zero-Trust Token Authentication**: MCP invocations require valid Google Cloud Identity OIDC tokens (when target is Cloud Run) or static bearer tokens (when target is on-prem Proxmox).
+- **Dynamic PII Masking & PCI Compliance**: Subscriber names, phone numbers, SSNs, street addresses, and payment card numbers are automatically sanitized before leaving the database boundary.
+- **Immutable Audit Logging**: Every tool execution is recorded in Grafana Loki with caller identity (`AI_AGENT`), initiating user email, tool arguments, and results.
+- **Universal Portability**: The MCP backend and CRM stack can run in Cloud Run, local Docker, or on-prem Proxmox without code modifications.
 
 ---
 
@@ -131,6 +140,24 @@ HybridAI/
 │           └── dashboard.html                 # Queue view, active outages banner, and GE App integration helper
 ├── scripts/                                   # Developer utilities & authenticated proxies
 │   └── cloudrun_gateway.py                    # Multi-service local proxy bridge for private Cloud Run services
+├── telecom-agent/                             # Google ADK Agent (Agent Runtime & Gemini Enterprise)
+│   ├── agents-cli-manifest.yaml               # Google Agents CLI manifest descriptor
+│   ├── deployment_metadata.json               # Agent Runtime deployment metadata
+│   ├── Dockerfile                             # Hardened container for standalone agent deployment
+│   ├── pyproject.toml                         # ADK agent packaging with google-adk[gcp,mcp]
+│   ├── app/
+│   │   ├── __init__.py                        # ADK app exports
+│   │   ├── agent.py                           # Root LlmAgent definition, model setup, & strict prompt
+│   │   ├── config.py                          # Runtime settings (MCP URL, target mode, model)
+│   │   ├── fast_api_app.py                    # FastAPI server for A2A and Vertex AI Reasoning Engine routes
+│   │   ├── tools.py                           # The 8 strict telecom tools with dynamic audit header injection
+│   │   └── app_utils/                         # Reasoning engine adapter, A2A routes, & telemetry
+│   └── tests/
+│       ├── eval/                              # Evaluation suite with LLM-as-judge scoring
+│       │   ├── eval_config.yaml               # Evaluation criteria & metrics
+│       │   └── datasets/basic-dataset.json    # In-scope tool queries & out-of-scope refusal test cases
+│       └── unit/
+│           └── test_agent.py                  # Pytest suite verifying agent structure, prompt, & headers
 └── tests/
     └── test_telecom_mcp.py                    # Automated test suite (PII, Auth, DB seeding, MCP tools)
 ```
@@ -140,9 +167,11 @@ HybridAI/
 ## 3. Frameworks & Libraries
 
 - **Language & Runtime**: Python 3.11+
+- **Agent Framework**: [Google Agent Development Kit (ADK)](https://adk.dev/) (`google-adk[gcp,mcp]>=2.0.0`)
+- **Foundation Models**: [Google GenAI SDK](https://github.com/google-gemini/google-genai) (`google-genai>=2.0.0`) with Gemini 2.5 Flash
 - **API & Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) (High-performance ASGI)
 - **Data Persistence**: [SQLAlchemy 2.0 Async](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [aiosqlite](https://github.com/omnilib/aiosqlite)
-- **Protocol**: FastMCP Server implementing [Model Context Protocol](https://modelcontextprotocol.io/) via Server-Sent Events (SSE)
+- **Protocol**: FastMCP Server implementing [Model Context Protocol](https://modelcontextprotocol.io/) via Server-Sent Events (SSE) & JSON-RPC
 - **Frontend & Styling**: Jinja2 HTML5 + Bootstrap 5.3.3 + Bootstrap Icons 1.11.3 (100% offline, locally stored)
 - **Observability**: [Prometheus Client](https://github.com/prometheus/client_python), [Grafana Loki](https://grafana.com/oss/loki/), and [Grafana](https://grafana.com/)
 - **Data Validation & Security**: Pydantic v2 Settings, Cryptography, Secrets
@@ -153,13 +182,14 @@ HybridAI/
 
 All settings are externalized and dynamically loaded from the environment or `.env` file.
 
+### Platform & FastMCP Server Environment Variables
 | Variable Name | Data Type | Required | Default Value | Description | Example |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `APP_ENV` | `string` | No | `development` | Deployment environment mode (`development`, `staging`, `production`) | `production` |
 | `LOG_LEVEL` | `string` | No | `INFO` | Logging threshold (`DEBUG`, `INFO`, `WARN`, `ERROR`) | `INFO` |
 | `CRM_PORT` | `integer` | No | `8000` | HTTP port for the Customer Care CRM Console | `8000` |
 | `MCP_PORT` | `integer` | No | `8001` | HTTP & SSE port for the FastMCP Server | `8001` |
-| `MCP_AUTH_TOKEN` | `string` | **Yes** | `telecom-mcp-secret-token-change-in-prod-xyz987` | Secret Bearer token required by Gemini Enterprise App | `telecom-sec-xyz-987` |
+| `MCP_AUTH_TOKEN` | `string` | **Yes** | `telecom-mcp-secret-token-change-in-prod-xyz987` | Secret Bearer token required for MCP authentication | `telecom-sec-xyz-987` |
 | `DATABASE_URL` | `string` | No | Auto-detected | Database connection string (PostgreSQL or automatic SQLite fallback) | `postgresql+asyncpg://user:pass@host:5432/db` |
 | `POSTGRES_USER` | `string` | No | `telecom_user` | PostgreSQL superuser username | `telecom_user` |
 | `POSTGRES_PASSWORD` | `string` | **Yes** | `telecom_secure_pass` | PostgreSQL superuser password | `SuperSecretPass123!` |
@@ -167,6 +197,17 @@ All settings are externalized and dynamically loaded from the environment or `.e
 | `LOKI_URL` | `string` | No | `http://localhost:3100` | HTTP push endpoint for Grafana Loki log ingestion | `http://localhost:3100` |
 | `GRAFANA_ADMIN_USER` | `string` | No | `admin` | Initial administrator username for Grafana | `admin` |
 | `GRAFANA_ADMIN_PASSWORD` | `string` | **Yes** | `telecom_admin` | Initial administrator password for Grafana | `GrafanaPass456!` |
+
+### Telecom ADK Agent Environment Variables (`telecom-agent/.env`)
+| Variable Name | Data Type | Required | Default Value | Description | Example |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GOOGLE_GENAI_USE_VERTEXAI`| `boolean`| No | `true` | Enables Vertex AI backend authentication | `true` |
+| `GOOGLE_CLOUD_PROJECT` | `string` | **Yes** | `pradeesi-ai-demo` | Target Google Cloud Project ID | `pradeesi-ai-demo` |
+| `GOOGLE_CLOUD_LOCATION`| `string` | No | `us-central1` | Target GCP region for Vertex AI runtime | `us-central1` |
+| `MODEL_NAME` | `string` | No | `gemini-2.5-flash` | Foundation model driving agent reasoning | `gemini-2.5-flash` |
+| `MCP_SERVER_URL` | `string` | **Yes** | `https://telecom-mcp-server-...run.app` | Target FastMCP server URL (Cloud Run or Proxmox) | `http://localhost:8001` |
+| `MCP_DEPLOYMENT_TARGET`| `string` | No | `cloud_run` | Target MCP hosting model (`cloud_run` or `on_prem`) | `cloud_run` |
+| `MCP_AUTH_TOKEN` | `string` | Conditional | `telecom-mcp-secret-...` | Static Bearer token required when target is `on_prem` | `telecom-sec-token` |
 
 ---
 
@@ -818,6 +859,162 @@ To bridge backend capabilities with frontline contact center policies, this repo
 2. Navigate to **Agent Configuration / System Instructions / Playbooks**.
 3. Copy the contents of [`skills/telecom_customer_care_agent/SKILL.md`](skills/telecom_customer_care_agent/SKILL.md) and paste it into the **System Instructions** or **Agent Playbook** editor.
 4. Save the configuration. Gemini Enterprise will now automatically govern all 8 FastMCP tools using this interactive turn-by-turn protocol.
+
+---
+
+### 8.2 Google ADK Agent Deployment & Gemini Enterprise Registration (GCP Agent Runtime)
+
+The repository provides a dedicated, enterprise-grade AI agent built with the **Google Agent Development Kit (ADK)** located in [`telecom-agent/`](telecom-agent/). The agent interfaces directly with the 8 FastMCP telecom tools and is architected for deployment to **Google Cloud Agent Runtime (Vertex AI Reasoning Engines)** and seamless publication into the **Gemini Enterprise App**.
+
+#### Architectural & Operational Principles:
+
+1. **Strict MCP Tool Boundary Enforcement**:
+   - The agent operates exclusively across the 8 FastMCP telecom tools (`search_customer`, `get_customer_360`, `get_service_diagnostics`, `run_remote_device_action`, `check_network_outages`, `get_billing_breakdown`, `get_upsell_recommendations`, `log_agent_interaction`).
+   - If an end user asks questions or makes requests outside telecom customer care, diagnostics, billing, network outages, or device remediation, the agent deterministically refuses:
+     > *"I am dedicated exclusively to telecom customer care, diagnostics, billing, network outages, and subscriber operations. This requested functionality is not available."*
+2. **Hybrid Cloud / On-Premises Topology**:
+   - **ADK Agent**: Deployed **always on GCP** on Vertex AI Reasoning Engines (Agent Runtime).
+   - **MCP Server & Support Tier**: Can reside either on **Google Cloud Run** or **On-Premises on a Proxmox VE server** (connected via Cloud VPN, Interconnect, or Secure API Gateway).
+3. **Identity & Compliance Header Propagation**:
+   - The ADK agent does **NOT** send metrics or logs directly to Prometheus or Loki; it uses GCP-native observability (Cloud Trace and Vertex AI Reasoning Engine monitoring).
+   - When invoking MCP tools, the ADK agent dynamically enriches HTTP headers with critical audit context:
+     - `X-Goog-Authenticated-User-Email`: Propagates the Gemini Enterprise authenticated user identity (e.g. `agent@enterprise.com`).
+     - `X-Agent-Identity: telecom-customer-care-agent`: Identifies the calling agent framework.
+     - `X-Cloud-Trace-Context`: Distributed trace identifier correlating the reasoning step with backend database calls.
+   - The MCP server receives these headers, logs full request bodies, headers, and responses to **Grafana Loki**, and increments execution counters in **Prometheus**, maintaining an uncompromised audit trail for compliance officers.
+
+---
+
+#### 8.2.1 Installation & Local Agent Environment Setup
+
+Prerequisites:
+- Python 3.11+
+- `uv` package manager (or `pip`)
+- `agents-cli` installed and authenticated (`gcloud auth application-default login`)
+
+```bash
+# 1. Navigate to the agent directory
+cd telecom-agent
+
+# 2. Sync dependencies using uv (or pip)
+uv sync
+
+# 3. Configure runtime environment
+# Create a local .env file or export variables:
+export MCP_DEPLOYMENT_TARGET="cloud_run"       # Options: "cloud_run" or "on_prem"
+export MCP_SERVER_URL="http://localhost:8001"   # Local gateway or Cloud Run URL
+export MCP_BEARER_TOKEN="telecom-mcp-secret-token-change-in-prod-xyz987"
+export GCP_PROJECT_ID="pradeesi-ai-demo"
+export GCP_REGION="europe-west1"
+export MODEL_NAME="gemini-2.5-flash"
+```
+
+---
+
+#### 8.2.2 Running Automated Unit & Eval Tests
+
+Run the unit test suite covering tool definitions, scope enforcement, and MCP client initialization:
+```bash
+cd telecom-agent
+python3 -m pytest tests/unit/test_agent.py -v
+```
+
+All unit tests verify:
+- ✅ Successful loading and schema conversion of the 8 MCP tools into the ADK runtime.
+- ✅ Correct model parameterization (`gemini-2.5-flash`).
+- ✅ Strict system instruction boundary prompt presence.
+- ✅ Custom HTTP header propagation (`X-Goog-Authenticated-User-Email`, `X-Agent-Identity`).
+
+---
+
+#### 8.2.3 Local Interactive Testing with Agents CLI Playground
+
+Before deploying to Google Cloud, launch the interactive web playground to simulate user conversations, inspect reasoning traces, and verify tool execution:
+
+```bash
+cd telecom-agent
+agents-cli playground
+```
+
+1. Open the URL displayed in the terminal (default: `http://localhost:8080` or `http://localhost:8085`).
+2. **Test In-Scope Telecom Scenario**:
+   - Prompt: *"Customer with phone +1 (555) 234-5678 is experiencing optical line attenuation and high packet loss. Can you check diagnostics and reboot their ONT?"*
+   - Verify: The agent invokes `search_customer`, runs `get_service_diagnostics`, detects `-28.5 dBm`, calls `run_remote_device_action(action="reboot")`, and presents the structured 3-part contact center card.
+3. **Test Out-of-Scope Refusal**:
+   - Prompt: *"Write a Python script to calculate Fibonacci numbers."* or *"What is the capital of France?"*
+   - Verify: The agent immediately returns the mandatory scope refusal message without hallucinating or running arbitrary tools.
+
+---
+
+#### 8.2.4 Deploying to GCP Agent Runtime (Vertex AI Reasoning Engines)
+
+Deploy the ADK agent container and reasoning engine to Google Cloud:
+
+##### Scenario A: Connecting to Cloud Run MCP Backend
+```bash
+cd telecom-agent
+
+agents-cli deploy \
+  --deployment-target agent_runtime \
+  --project-id pradeesi-ai-demo \
+  --region europe-west1 \
+  --env-var MCP_DEPLOYMENT_TARGET=cloud_run \
+  --env-var MCP_SERVER_URL=https://telecom-mcp-server-1111937452.europe-west1.run.app \
+  --env-var MCP_BEARER_TOKEN=telecom-mcp-secret-token-change-in-prod-xyz987 \
+  --env-var MODEL_NAME=gemini-2.5-flash
+```
+
+##### Scenario B: Connecting to On-Premises Proxmox MCP Backend
+If the MCP server, PostgreSQL, and Loki/Prometheus stack are running on-premises in a Proxmox VE private cluster:
+```bash
+cd telecom-agent
+
+agents-cli deploy \
+  --deployment-target agent_runtime \
+  --project-id pradeesi-ai-demo \
+  --region europe-west1 \
+  --env-var MCP_DEPLOYMENT_TARGET=on_prem \
+  --env-var MCP_SERVER_URL=https://mcp-gateway.onprem.yourdomain.com \
+  --env-var MCP_BEARER_TOKEN=telecom-mcp-secret-token-change-in-prod-xyz987 \
+  --env-var MODEL_NAME=gemini-2.5-flash
+```
+
+---
+
+#### 8.2.5 Registering & Publishing to the Gemini Enterprise App
+
+Once deployed to Agent Runtime, publish the agent so that frontline contact center specialists can invoke it directly within **Gemini Enterprise**:
+
+```bash
+cd telecom-agent
+
+# Publish the ADK agent into Gemini Enterprise App Catalog
+agents-cli publish gemini-enterprise \
+  --name "Telecom Care Co-Pilot" \
+  --description "Enterprise telecom agent for subscriber search, real-time ONT signal diagnostics, remote hardware remediation, billing dispute breakdown, and network outage triage." \
+  --region europe-west1
+```
+
+Frontline contact center agents authenticated via **Google Workspace / Cloud Identity** will now see the "Telecom Care Co-Pilot" in their Gemini Enterprise interface.
+
+---
+
+#### 8.2.6 Audit Trail & Telemetry Verification in Grafana Loki
+
+When the deployed ADK agent or Gemini Enterprise executes a tool, the compliance and security team can inspect the full end-to-end audit trail in Grafana Loki:
+
+1. Open Grafana: 👉 [http://localhost:3000](http://localhost:3000) (or your Cloud Run / On-prem Grafana URL).
+2. Navigate to **Explore** &rarr; select **Loki** datasource.
+3. Run the following LogQL query:
+   ```logql
+   {app="telecom-mcp-server"} |= "MCP_TOOL_EXECUTION"
+   ```
+4. Expand any log entry to verify:
+   - `caller`: Authenticated identity (`agent@yourdomain.com`).
+   - `caller_type`: `HUMAN_AGENT` or `SERVICE_AGENT`.
+   - `trace_id`: Correlating GCP distributed trace ID.
+   - `request`: Full tool input arguments (e.g. `phone_number`, `action`).
+   - `response`: Full sanitized tool output payload with masked customer PII.
 
 ---
 

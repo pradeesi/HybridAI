@@ -143,3 +143,7 @@ Desktop.ini
 *~
 *.sublime-workspace
 *.sublime-project
+
+# Google Agents CLI & ADK Local Artifacts
+.google-agents-cli/
+.adk/

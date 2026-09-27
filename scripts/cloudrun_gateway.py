@@ -45,8 +45,8 @@ def create_proxy_app(service_name: str, target_url: str) -> FastAPI:
         token = get_id_token()
         url = f"{target_url}/{path}"
         
-        # Filter hop-by-hop headers
-        excluded = {"host", "connection", "content-length"}
+        # Filter hop-by-hop headers and incoming authorization so proxy's valid Cloud Run token is used
+        excluded = {"host", "connection", "content-length", "authorization", "x-serverless-authorization"}
         forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in excluded}
         forward_headers["Authorization"] = f"Bearer {token}"
         
