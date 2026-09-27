@@ -80,11 +80,76 @@ async def ensure_six_months_billing_records(session) -> None:
         logger.info("Backfilled %d historical billing records across accounts.", records_added)
 
 
+async def ensure_sample_interactions(session) -> None:
+    """
+    Summary:
+        Ensures realistic customer interactions are present in the CRM database,
+        including historical interactions logged by Gemini Enterprise AI Assist
+        and Human Frontline Agents.
+    """
+    count_res = await session.execute(select(func.count(CallInteraction.id)))
+    if (count_res.scalar() or 0) > 0:
+        return
+
+    cust_res = await session.execute(select(Customer))
+    cust_map = {f"{c.first_name} {c.last_name}": c.id for c in cust_res.scalars().all()}
+    now = datetime.utcnow()
+
+    sample_interactions = []
+
+    if "Elena Rostova" in cust_map:
+        sample_interactions.append(
+            CallInteraction(
+                customer_id=cust_map["Elena Rostova"],
+                agent_name="Gemini Enterprise AI Assist",
+                call_duration_sec=142,
+                issue_summary="AI Self-Service Session: Subscriber reported frequent 4K buffer delays and slow Wi-Fi in 97477.",
+                resolution_summary="AI diagnostics identified optical Rx power degradation (-28.4 dBm). Executed remote Wi-Fi channel optimization to 5GHz Channel 36, scheduled line test, and advised frontline support review.",
+                upsell_offered=True,
+                upsell_accepted=False,
+                timestamp=now - timedelta(hours=3, minutes=15)
+            )
+        )
+
+    if "Marcus Vance" in cust_map:
+        sample_interactions.append(
+            CallInteraction(
+                customer_id=cust_map["Marcus Vance"],
+                agent_name="Gemini Enterprise AI Assist",
+                call_duration_sec=95,
+                issue_summary="AI Self-Service Session: Customer inquired why 5G mobile data suddenly throttled to 128 kbps.",
+                resolution_summary="AI verified data cap threshold (50.2 GB / 50.0 GB reached). Explained monthly billing reset date (2026-09-01) and offered 15GB Priority Speed Booster add-on ($15.00).",
+                upsell_offered=True,
+                upsell_accepted=False,
+                timestamp=now - timedelta(days=1, hours=2)
+            )
+        )
+
+    if "Amina Al-Mansoor" in cust_map:
+        sample_interactions.append(
+            CallInteraction(
+                customer_id=cust_map["Amina Al-Mansoor"],
+                agent_name="Frontline Agent (Sarah J. - Ext: 4082)",
+                call_duration_sec=240,
+                issue_summary="Customer called disputing $85 International Roaming surcharge on August 2026 statement from Heathrow Airport transit.",
+                resolution_summary="Opened billing dispute ticket #DISP-8841. Verified customer Platinum tier. Submitted ticket to roaming audit desk and placed $85 charge on temporary hold.",
+                upsell_offered=True,
+                upsell_accepted=True,
+                timestamp=now - timedelta(days=2, hours=4)
+            )
+        )
+
+    if sample_interactions:
+        session.add_all(sample_interactions)
+        await session.commit()
+        logger.info("Seeded %d realistic customer interaction audit records (Gemini Enterprise AI + Human Agents).", len(sample_interactions))
+
+
 async def seed_synthetic_telecom_data() -> None:
     """
     Summary:
         Seeds comprehensive, realistic telecom synthetic data for contact center scenarios.
-        Ensures 6 months of billing records are always populated for all customers.
+        Ensures 6 months of billing records and customer interaction history are always populated.
     """
     try:
         async with AsyncSessionLocal() as session:
@@ -93,8 +158,9 @@ async def seed_synthetic_telecom_data() -> None:
             count = result.scalar() or 0
 
             if count > 0:
-                logger.info("Database already contains %d customer records. Ensuring 6-month billing history...", count)
+                logger.info("Database already contains %d customer records. Ensuring 6-month billing history and interactions...", count)
                 await ensure_six_months_billing_records(session)
+                await ensure_sample_interactions(session)
                 return
 
             logger.info("Seeding synthetic telecom database with rich scenario personas...")
@@ -409,7 +475,8 @@ async def seed_synthetic_telecom_data() -> None:
                 session.add(BillingRecord(account_id=acc_4.id, **b))
 
             await session.commit()
-            logger.info("Successfully seeded synthetic personas, accounts, devices, catalog offers, and 6-month billing history.")
+            await ensure_sample_interactions(session)
+            logger.info("Successfully seeded synthetic personas, accounts, devices, catalog offers, 6-month billing history, and interactions.")
     except Exception as exc:
         logger.warning(
             "Encountered unexpected non-fatal exception during synthetic data seeding (%s). Continuing startup...",

@@ -6,6 +6,7 @@ Dependencies/Side Effects: Serves local static assets, queries database models, 
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Form, HTTPException, Request, status
@@ -108,8 +109,13 @@ async def dashboard(request: Request):
         out_res = await session.execute(stmt_out)
         outages = out_res.scalars().all()
 
-        # Load recent interactions
-        stmt_inter = select(CallInteraction).order_by(CallInteraction.timestamp.desc()).limit(5)
+        # Load recent interactions (both AI Assist and Human Frontline Agent records)
+        stmt_inter = (
+            select(CallInteraction)
+            .options(selectinload(CallInteraction.customer))
+            .order_by(CallInteraction.timestamp.desc())
+            .limit(10)
+        )
         inter_res = await session.execute(stmt_inter)
         recent_interactions = inter_res.scalars().all()
 
@@ -119,8 +125,7 @@ async def dashboard(request: Request):
         context={
             "customers": customers,
             "outages": outages,
-            "recent_interactions": recent_interactions,
-            "mcp_token": settings.MCP_AUTH_TOKEN
+            "recent_interactions": recent_interactions
         }
     )
 
@@ -207,6 +212,10 @@ async def customer_360(request: Request, customer_id: str):
         # Sort billing records chronologically descending (newest first)
         for acc in customer.accounts:
             acc.billing_records.sort(key=lambda b: b.invoice_month, reverse=True)
+
+        # Sort interactions chronologically descending (newest first)
+        if customer.interactions:
+            customer.interactions.sort(key=lambda i: i.timestamp or datetime.min, reverse=True)
 
         # Load upsell offers
         stmt_offers = select(UpsellOffer)
@@ -306,7 +315,8 @@ async def trigger_device_action(
 @app.post("/customers/{customer_id}/log_interaction")
 async def log_interaction(
     customer_id: str,
-    agent_name: str = Form(...),
+    agent_name: str = Form("Frontline-Agent-4082"),
+    interaction_channel: str = Form("Inbound Phone Call"),
     issue_summary: str = Form(...),
     resolution_summary: str = Form(...),
     call_duration_sec: int = Form(120),
@@ -317,15 +327,17 @@ async def log_interaction(
     Summary:
         Saves call notes, resolution, and upsell metrics to the database and streams audit record to Loki.
     """
+    full_issue = f"[{interaction_channel}] {issue_summary.strip()}" if interaction_channel else issue_summary.strip()
     async with AsyncSessionLocal() as session:
         inter = CallInteraction(
             customer_id=customer_id,
             agent_name=agent_name,
-            issue_summary=issue_summary,
-            resolution_summary=resolution_summary,
+            issue_summary=full_issue,
+            resolution_summary=resolution_summary.strip(),
             call_duration_sec=call_duration_sec,
             upsell_offered=upsell_offered,
-            upsell_accepted=upsell_accepted
+            upsell_accepted=upsell_accepted,
+            timestamp=datetime.utcnow()
         )
         session.add(inter)
         await session.commit()
@@ -336,6 +348,41 @@ async def log_interaction(
         url=f"/customers/{customer_id}",
         status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+@app.post("/interactions/quick_log")
+async def quick_log_interaction(
+    customer_id: str = Form(...),
+    agent_name: str = Form("Frontline-Agent-4082"),
+    interaction_channel: str = Form("Inbound Phone Call"),
+    issue_summary: str = Form(...),
+    resolution_summary: str = Form(...),
+    call_duration_sec: int = Form(180),
+    upsell_offered: bool = Form(False),
+    upsell_accepted: bool = Form(False)
+):
+    """
+    Summary:
+        Allows contact center agents to quickly record customer calls or escalations
+        directly from the dashboard view.
+    """
+    full_issue = f"[{interaction_channel}] {issue_summary.strip()}" if interaction_channel else issue_summary.strip()
+    async with AsyncSessionLocal() as session:
+        inter = CallInteraction(
+            customer_id=customer_id,
+            agent_name=agent_name,
+            issue_summary=full_issue,
+            resolution_summary=resolution_summary.strip(),
+            call_duration_sec=call_duration_sec,
+            upsell_offered=upsell_offered,
+            upsell_accepted=upsell_accepted,
+            timestamp=datetime.utcnow()
+        )
+        session.add(inter)
+        await session.commit()
+
+    logger.info("Quick call interaction logged for customer %s by %s", customer_id, agent_name)
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 def run():

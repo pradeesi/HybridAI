@@ -11,13 +11,10 @@
         <h4 class="mb-1 fw-bold text-dark">Telecom Frontline Agent Workspace</h4>
         <p class="text-muted mb-0 small">Frontline Operations &amp; Subscriber 360 Diagnostic Console</p>
       </div>
-      <div class="d-flex gap-2">
-        <a href="http://localhost:3000" target="_blank" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1">
-          <i class="bi bi-speedometer2"></i> Grafana Dashboards
-        </a>
-        <a href="http://localhost:9090" target="_blank" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1">
-          <i class="bi bi-activity"></i> Prometheus Metrics
-        </a>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-success-subtle text-success border border-success-subtle py-2 px-3 fs-6 d-flex align-items-center gap-2">
+          <i class="bi bi-headset"></i> Station 4082 &bull; Active Shift
+        </span>
       </div>
     </div>
   </div>
@@ -103,107 +100,168 @@
       </div>
     </div>
 
-    <!-- Recent Call Interactions Log -->
+    <!-- Recent Customer Call & AI Assist Interactions Log -->
     <div class="card card-elevated bg-white mt-4">
-      <div class="card-header bg-white py-3">
-        <h5 class="mb-0 fw-bold">Recent Agent Call Interactions & AHT Log</h5>
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+          <i class="bi bi-clock-history text-primary"></i> Customer Interaction &amp; AI Assist Audit Log
+        </h5>
+        <span class="badge bg-secondary-subtle text-secondary small">Unified Human + AI Audit Trail</span>
       </div>
       <div class="card-body">
         {% if recent_interactions %}
           <div class="list-group list-group-flush">
             {% for inter in recent_interactions %}
-            <div class="list-group-item px-0">
-              <div class="d-flex justify-content-between align-items-center">
-                <strong>{{ inter.agent_name }}</strong>
-                <span class="badge bg-secondary">AHT: {{ inter.call_duration_sec }}s</span>
+            <div class="list-group-item px-0 py-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="d-flex align-items-center gap-2">
+                  {% if 'Gemini' in inter.agent_name or 'AI' in inter.agent_name %}
+                    <span class="badge bg-primary text-white d-flex align-items-center gap-1">
+                      <i class="bi bi-robot"></i> Gemini Enterprise AI Assist
+                    </span>
+                  {% else %}
+                    <span class="badge bg-secondary text-white d-flex align-items-center gap-1">
+                      <i class="bi bi-person-badge-fill"></i> {{ inter.agent_name }}
+                    </span>
+                  {% endif %}
+                  {% if inter.customer %}
+                    <a href="/customers/{{ inter.customer_id }}" class="fw-bold text-dark text-decoration-none ms-1">
+                      {{ inter.customer.first_name }} {{ inter.customer.last_name }}
+                    </a>
+                  {% endif %}
+                </div>
+                <div class="text-end">
+                  <span class="badge bg-light text-secondary border">Duration: {{ inter.call_duration_sec }}s</span>
+                  <small class="text-muted ms-2">{{ inter.timestamp.strftime('%b %d, %H:%M') if inter.timestamp else 'Recent' }}</small>
+                </div>
               </div>
-              <p class="mb-1 small"><strong>Issue:</strong> {{ inter.issue_summary }}</p>
-              <p class="mb-0 small text-success"><strong>Resolution:</strong> {{ inter.resolution_summary }}</p>
+              <p class="mb-1 small"><strong>Issue Summary:</strong> {{ inter.issue_summary }}</p>
+              <p class="mb-0 small text-success"><strong>Resolution / Action:</strong> {{ inter.resolution_summary }}</p>
             </div>
             {% endfor %}
           </div>
         {% else %}
-          <p class="text-muted mb-0 small">No call interactions logged yet. Open a customer profile above to simulate a live call.</p>
+          <p class="text-muted mb-0 small">No call interactions logged yet. Open a customer profile above to record customer notes.</p>
         {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Right Pane: Gateway & Compliance Status -->
+  <!-- Right Pane: Contact Center Agent Shift & Quick Action Tools -->
   <div class="col-lg-4">
-    <!-- FastMCP Gateway & Security Status -->
+    <!-- Contact Center Shift & Agent Workspace Card -->
     <div class="card card-elevated bg-white mb-4">
       <div class="card-header bg-dark text-white py-3">
         <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
-          <i class="bi bi-shield-check text-success"></i> FastMCP Gateway Status
+          <i class="bi bi-person-lines-fill text-primary"></i> Frontline Shift Performance
         </h5>
       </div>
       <div class="card-body">
-        <p class="small text-muted">
-          Direct Model Context Protocol (MCP) server endpoints exposing CRM telemetry, diagnostics, and billing tools.
-        </p>
-
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-uppercase text-secondary">MCP SSE Stream Endpoint</label>
-          <div class="input-group input-group-sm">
-            <input type="text" class="form-control font-monospace" value="http://localhost:8001/sse" readonly>
+        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+          <div>
+            <strong class="d-block text-dark">Agent: Sarah Jenkins</strong>
+            <span class="text-muted small">Extension: #4082 &bull; Tier 2 Frontline</span>
           </div>
+          <span class="badge bg-success-subtle text-success border border-success">ON CALL / READY</span>
         </div>
 
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-uppercase text-secondary">Bearer Auth Token</label>
-          <div class="input-group input-group-sm">
-            <input type="password" id="mcpTokenInput" class="form-control font-monospace" value="{{ mcp_token }}" readonly>
-            <button class="btn btn-outline-secondary" onclick="toggleToken()"><i class="bi bi-eye"></i></button>
+        <div class="row g-2 text-center small mb-3">
+          <div class="col-6">
+            <div class="p-2 bg-light rounded border">
+              <div class="text-muted" style="font-size: 0.72rem;">AVERAGE HANDLING TIME</div>
+              <div class="fs-5 fw-bold text-dark">3m 12s</div>
+              <span class="text-success" style="font-size: 0.7rem;">&lt; 4m target</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 bg-light rounded border">
+              <div class="text-muted" style="font-size: 0.72rem;">FIRST CONTACT RESOLUTION</div>
+              <div class="fs-5 fw-bold text-success">94.4%</div>
+              <span class="text-muted" style="font-size: 0.7rem;">Target: 90%</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 bg-light rounded border">
+              <div class="text-muted" style="font-size: 0.72rem;">CUSTOMER CSAT</div>
+              <div class="fs-5 fw-bold text-primary">4.9 / 5.0</div>
+              <span class="text-muted" style="font-size: 0.7rem;">98.2% positive</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 bg-light rounded border">
+              <div class="text-muted" style="font-size: 0.72rem;">SHIFT CALLS LOGGED</div>
+              <div class="fs-5 fw-bold text-dark">{{ recent_interactions|length + 12 }}</div>
+              <span class="text-muted" style="font-size: 0.7rem;">Shift ends in 3h</span>
+            </div>
           </div>
         </div>
 
         <div class="alert alert-info py-2 small mb-0">
-          <strong>Security Guardrails Active:</strong>
-          <ul class="mb-0 ps-3 mt-1">
-            <li>Strict Bearer Token verification on all tools</li>
-            <li>Dynamic PII masking before response output</li>
-            <li>Immutable audit stream dispatched to Loki</li>
-          </ul>
+          <i class="bi bi-info-circle-fill me-1"></i>
+          <strong>AI Collaboration Active:</strong> Gemini Enterprise interactions sync directly to this console for seamless human follow-up.
         </div>
       </div>
     </div>
 
-    <!-- Security & Compliance Status -->
+    <!-- Quick Customer Interaction Logger Card -->
     <div class="card card-elevated bg-white">
       <div class="card-header bg-white py-3">
         <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-          <i class="bi bi-shield-check text-success"></i> Compliance & Telemetry Status
+          <i class="bi bi-journal-plus text-primary"></i> Quick Log Customer Interaction
         </h6>
       </div>
-      <div class="card-body small">
-        <div class="d-flex justify-content-between py-1 border-bottom">
-          <span>PII Masking Layer:</span>
-          <span class="text-success fw-bold">ACTIVE (PCI / HIPAA Style)</span>
-        </div>
-        <div class="d-flex justify-content-between py-1 border-bottom">
-          <span>Loki Audit Logger:</span>
-          <span class="text-success fw-bold">STREAMING</span>
-        </div>
-        <div class="d-flex justify-content-between py-1 border-bottom">
-          <span>Prometheus Metrics:</span>
-          <span class="text-primary fw-bold">SCRAPING /metrics</span>
-        </div>
-        <div class="d-flex justify-content-between py-1">
-          <span>Container Runtime:</span>
-          <span class="text-muted fw-bold">Self-Contained (OCI)</span>
-        </div>
+      <div class="card-body">
+        <form action="/interactions/quick_log" method="POST">
+          <input type="hidden" name="agent_name" value="Frontline-Agent-4082">
+          <input type="hidden" name="call_duration_sec" value="180">
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Select Subscriber</label>
+            <select name="customer_id" class="form-select form-select-sm" required>
+              <option value="" disabled selected>-- Choose customer from queue --</option>
+              {% for c in customers %}
+                <option value="{{ c.id }}">{{ c.first_name }} {{ c.last_name }} ({{ c.phone_masked }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Interaction Channel</label>
+            <select name="interaction_channel" class="form-select form-select-sm">
+              <option value="Inbound Phone Call" selected>Inbound Phone Call</option>
+              <option value="AI Agent Escalation">AI Agent Escalation</option>
+              <option value="Live Chat Support">Live Chat Support</option>
+              <option value="In-Store / Field Support">In-Store / Field Support</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Customer Issue Summary</label>
+            <textarea name="issue_summary" class="form-control form-control-sm" rows="2" placeholder="e.g., Inquired about billing charges discussed with AI" required></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Resolution &amp; Actions Taken</label>
+            <textarea name="resolution_summary" class="form-control form-control-sm" rows="2" placeholder="e.g., Explained invoice line items and confirmed resolution" required></textarea>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="form-check form-switch small">
+              <input class="form-check-input" type="checkbox" name="upsell_offered" id="quickUpsellOffered">
+              <label class="form-check-label" for="quickUpsellOffered">Upsell Offered</label>
+            </div>
+            <div class="form-check form-switch small">
+              <input class="form-check-input" type="checkbox" name="upsell_accepted" id="quickUpsellAccepted">
+              <label class="form-check-label" for="quickUpsellAccepted">Upgrade Accepted</label>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-1">
+            <i class="bi bi-save"></i> Save Interaction to CRM
+          </button>
+        </form>
       </div>
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  function toggleToken() {
-    const input = document.getElementById('mcpTokenInput');
-    input.type = input.type === 'password' ? 'text' : 'password';
-  }
-</script>
 {% endblock %}
