@@ -20,6 +20,7 @@ scrape_configs:
   - job_name: "telecom-mcp-server-cloud"
     metrics_path: "/metrics"
     scheme: https
+    bearer_token_file: /tmp/mcp_token
     static_configs:
       - targets: ["telecom-mcp-server-1111937452.europe-west1.run.app:443"]
         labels:

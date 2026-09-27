@@ -5,6 +5,8 @@ FROM grafana/grafana:10.4.0
 USER root
 COPY deploy/grafana/provisioning /etc/grafana/provisioning
 COPY deploy/grafana/dashboards /var/lib/grafana/dashboards
+COPY deploy/grafana/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 USER 472
 
 EXPOSE 3000
@@ -17,4 +19,4 @@ ENV GF_PATHS_DATA=/tmp/grafana
 ENV GF_PATHS_LOGS=/tmp/grafana/logs
 ENV GF_PATHS_PLUGINS=/tmp/grafana/plugins
 
-ENTRYPOINT ["/bin/sh", "-c", "mkdir -p /tmp/grafana /tmp/grafana/plugins /tmp/grafana/logs && exec /run.sh"]
+ENTRYPOINT ["/entrypoint.sh"]

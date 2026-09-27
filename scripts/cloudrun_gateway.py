@@ -70,69 +70,62 @@ def create_proxy_app(service_name: str, target_url: str) -> FastAPI:
     return app
 
 
-async def sync_grafana_datasources() -> None:
+async def sync_grafana_iam_tokens():
     """
     Summary:
-        Periodically provisions and updates Grafana datasources (Loki & Prometheus)
-        with fresh Google IAM Bearer tokens to prevent authorization errors.
-        Dynamically discovers datasource IDs and current versions to eliminate 409 Conflict errors.
+        Periodically mints audience-specific ID tokens for Prometheus and Loki using the project
+        compute service account (roles/run.invoker) and updates Grafana datasources via its REST API.
     """
-    # Wait for the local gateway proxy servers to initialize
-    await asyncio.sleep(2)
+    await asyncio.sleep(4)  # Allow local proxy to establish connections
+    sa_email = "1111937452-compute@developer.gserviceaccount.com"
+    prom_url = SERVICES[9090]
+    loki_url = SERVICES[3100]
+
     while True:
         try:
-            token = get_id_token()
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.get("http://127.0.0.1:3000/api/datasources")
-                if res.status_code == 200:
-                    datasources = res.json()
-                    for ds in datasources:
-                        ds_id = ds.get("id")
-                        ds_name = ds.get("name")
-                        ds_type = ds.get("type")
-                        ds_ver = ds.get("version", 1)
-                        ds_uid = ds.get("uid")
+            # Mint audience token for Prometheus
+            prom_cmd = ["gcloud", "auth", "print-identity-token", f"--impersonate-service-account={sa_email}", f"--audiences={prom_url}"]
+            prom_res = subprocess.run(prom_cmd, capture_output=True, text=True)
+            prom_token = prom_res.stdout.strip().splitlines()[-1] if prom_res.returncode == 0 else ""
 
-                        if ds_type == "loki" or ds_name == "Loki":
-                            put_payload = {
-                                "id": ds_id,
-                                "uid": ds_uid,
-                                "orgId": 1,
-                                "name": "Loki",
-                                "type": "loki",
-                                "access": "proxy",
-                                "url": SERVICES[3100],
-                                "jsonData": {"httpHeaderName1": "Authorization"},
-                                "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
-                                "version": ds_ver
-                            }
-                            resp = await client.put(f"http://127.0.0.1:3000/api/datasources/{ds_id}", json=put_payload)
-                            if resp.status_code not in (200, 204):
-                                print(f"[Gateway] Loki datasource update notice: {resp.status_code}")
+            # Mint audience token for Loki
+            loki_cmd = ["gcloud", "auth", "print-identity-token", f"--impersonate-service-account={sa_email}", f"--audiences={loki_url}"]
+            loki_res = subprocess.run(loki_cmd, capture_output=True, text=True)
+            loki_token = loki_res.stdout.strip().splitlines()[-1] if loki_res.returncode == 0 else ""
 
-                        elif ds_type == "prometheus" or ds_name == "Prometheus":
-                            put_payload = {
-                                "id": ds_id,
-                                "uid": ds_uid,
-                                "orgId": 1,
-                                "name": "Prometheus",
-                                "type": "prometheus",
-                                "access": "proxy",
-                                "url": SERVICES[9090],
-                                "jsonData": {"httpHeaderName1": "Authorization"},
-                                "secureJsonData": {"httpHeaderValue1": f"Bearer {token}"},
-                                "version": ds_ver
-                            }
-                            resp = await client.put(f"http://127.0.0.1:3000/api/datasources/{ds_id}", json=put_payload)
-                            if resp.status_code not in (200, 204):
-                                print(f"[Gateway] Prometheus datasource update notice: {resp.status_code}")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                if prom_token:
+                    await client.put(
+                        "http://127.0.0.1:3000/api/datasources/uid/PBFA97CFB590B2093",
+                        auth=("admin", "telecom_admin"),
+                        json={
+                            "name": "Prometheus",
+                            "type": "prometheus",
+                            "access": "proxy",
+                            "url": prom_url,
+                            "jsonData": {"httpHeaderName1": "Authorization"},
+                            "secureJsonData": {"httpHeaderValue1": f"Bearer {prom_token}"}
+                        }
+                    )
+                if loki_token:
+                    await client.put(
+                        "http://127.0.0.1:3000/api/datasources/uid/P8E80F9AEF21F6940",
+                        auth=("admin", "telecom_admin"),
+                        json={
+                            "name": "Loki",
+                            "type": "loki",
+                            "access": "proxy",
+                            "url": loki_url,
+                            "jsonData": {"httpHeaderName1": "Authorization"},
+                            "secureJsonData": {"httpHeaderValue1": f"Bearer {loki_token}"}
+                        }
+                    )
+            print("[Gateway] Synchronized Grafana IAM tokens for Prometheus & Loki datasources (via UID).")
+        except Exception as e:
+            print(f"[Gateway] Warning: Failed to sync Grafana IAM tokens: {e}")
 
-                    print("[Gateway] Synced Grafana datasources (Loki & Prometheus) with fresh IAM token.")
-        except Exception as exc:
-            print(f"[Gateway] Background datasource sync warning: {exc}")
-
-        # Automatically refresh every 2 minutes so tokens never expire
-        await asyncio.sleep(120)
+        # Refresh every 30 minutes (OIDC tokens are valid for 60 minutes)
+        await asyncio.sleep(1800)
 
 
 async def main():
@@ -154,8 +147,7 @@ async def main():
         servers.append(server.serve())
         print(f"[Gateway] http://localhost:{port} -> {name} ({target})")
         
-    servers.append(sync_grafana_datasources())
-    await asyncio.gather(*servers)
+    await asyncio.gather(*servers, sync_grafana_iam_tokens())
 
 if __name__ == "__main__":
     asyncio.run(main())
