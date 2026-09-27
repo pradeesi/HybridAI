@@ -91,8 +91,8 @@ HybridAI/
 │   ├── grafana/
 │   │   ├── Dockerfile                         # Hardened Grafana container with auto-provisioning
 │   │   ├── dashboards/
-│   │   │   ├── telecom_mcp_security.json      # Live audit stream, PII counters, and auth failure dashboard
-│   │   │   └── telecom_operations.json        # AHT optimization, agent queue, and tool latency metrics
+│   │   │   ├── ai_agent_observability.json    # Executive command center: AI tool calls, success rates, latency, guardrails, & Loki audit stream
+│   │   │   └── telecom_mcp_security.json      # Live audit stream, PII counters, and auth failure dashboard
 │   │   └── provisioning/
 │   │       ├── dashboards/dashboards.yml      # Automated Grafana dashboard provider definition
 │   │       └── datasources/datasources.yml    # Auto-wired Prometheus and Loki datasources with env interpolation

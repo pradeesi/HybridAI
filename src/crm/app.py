@@ -8,15 +8,13 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, Request, Response, status
+from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
-from src.core.audit import audit_client
 from src.core.config import settings
 from src.core.security import mask_phone, mask_ssn
 from src.db.database import AsyncSessionLocal, init_db
@@ -41,7 +39,6 @@ async def lifespan(app: FastAPI):
     await seed_synthetic_telecom_data()
     yield
     logger.info("Shutting down CRM application...")
-    await audit_client.close()
 
 
 app = FastAPI(
@@ -64,18 +61,6 @@ async def health():
         Health check endpoint for CRM service.
     """
     return {"status": "healthy", "service": "telecom-crm-console"}
-
-
-@app.get("/metrics")
-async def metrics():
-    """
-    Summary:
-        Exposes Prometheus metrics for scraping.
-
-    Return Value:
-        Response: Plaintext Prometheus metrics payload.
-    """
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -272,18 +257,7 @@ async def log_interaction(
         session.add(inter)
         await session.commit()
 
-    await audit_client.log_event(
-        event_type="CALL_INTERACTION_SAVED",
-        caller_identity=agent_name,
-        tool_name="CRM_AGENT_CONSOLE",
-        customer_id=customer_id,
-        status="SUCCESS",
-        details={
-            "duration_sec": call_duration_sec,
-            "upsell_accepted": upsell_accepted,
-            "issue": issue_summary
-        }
-    )
+    logger.info("CRM call interaction recorded for customer %s by %s", customer_id, agent_name)
 
     return RedirectResponse(
         url=f"/customers/{customer_id}",
