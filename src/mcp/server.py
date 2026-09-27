@@ -140,6 +140,8 @@ async def verify_auth_token(
         security_context=security_context,
         details={"reason": "Invalid or missing Bearer/MCP token"}
     )
+    # Record actual unauthorized access attempt in Prometheus security telemetry
+    AUTH_FAILURES_COUNTER.inc()
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing Authorization Bearer or X-MCP-Token.",

@@ -36,12 +36,10 @@ def validate_bearer_token(auth_header: Optional[str]) -> bool:
         bool: True if authorized, False otherwise.
     """
     if not auth_header:
-        AUTH_FAILURES_COUNTER.inc()
         return False
 
     parts = auth_header.strip().split(" ")
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        AUTH_FAILURES_COUNTER.inc()
         return False
 
     return validate_token(parts[1])
@@ -61,7 +59,6 @@ def validate_token(token: Optional[str]) -> bool:
         bool: True if authorized, False otherwise.
     """
     if not token:
-        AUTH_FAILURES_COUNTER.inc()
         return False
 
     cleaned = token.strip()
@@ -87,7 +84,6 @@ def validate_token(token: Optional[str]) -> bool:
         except Exception:
             pass
 
-    AUTH_FAILURES_COUNTER.inc()
     return False
 
 
