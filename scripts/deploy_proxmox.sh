@@ -171,6 +171,53 @@ install_and_start_portainer() {
     log_success "Portainer CE container launched successfully."
 }
 
+# Helper: check if a port is in use by an external service (not our own running container)
+is_host_port_occupied() {
+    local port="$1"
+    local container_name="$2"
+
+    local in_use=1
+    if command -v ss &>/dev/null; then
+        if ss -tlpn 2>/dev/null | grep -qE ":${port}\b"; then
+            in_use=0
+        fi
+    elif command -v lsof &>/dev/null; then
+        if lsof -iTCP:"${port}" -sTCP:LISTEN &>/dev/null; then
+            in_use=0
+        fi
+    fi
+
+    if [ ${in_use} -ne 0 ]; then
+        return 1 # Port is completely free
+    fi
+
+    # Port is in use; check if held by our own running container
+    if ${DOCKER_CMD} ps --filter "name=^/${container_name}$" --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+        return 1 # Our own container is running on this port
+    fi
+
+    return 0 # Occupied by another process/container
+}
+
+# Helper: search for the next available port
+resolve_free_port() {
+    local desired_port="$1"
+    local port="${desired_port}"
+    while :; do
+        local in_use=1
+        if command -v ss &>/dev/null; then
+            ss -tlpn 2>/dev/null | grep -qE ":${port}\b" && in_use=0 || in_use=1
+        elif command -v lsof &>/dev/null; then
+            lsof -iTCP:"${port}" -sTCP:LISTEN &>/dev/null && in_use=0 || in_use=1
+        fi
+        if [ ${in_use} -ne 0 ]; then
+            echo "${port}"
+            return 0
+        fi
+        ((port++))
+    done
+}
+
 # ==============================================================================
 # 3. Host IP and Environment Configuration Setup
 # ==============================================================================
@@ -186,6 +233,19 @@ setup_environment_config() {
         HOST_IP="localhost"
     fi
     log_success "Detected Host LAN IP: ${BOLD}${HOST_IP}${NC}"
+
+    # Resolve Prometheus host port (fallback to 9091+ if 9090 is in use by Cockpit or host daemon)
+    if is_host_port_occupied 9090 "telecom-prometheus"; then
+        PROMETHEUS_PORT=$(resolve_free_port 9091)
+        log_warn "Host port 9090 is occupied by another process on this VM."
+        if systemctl is-active --quiet cockpit.socket 2>/dev/null || systemctl is-active --quiet cockpit 2>/dev/null; then
+            log_info "Detected Cockpit Linux Web Console holding port 9090."
+        fi
+        log_info "Automatically mapping Prometheus to host port ${BOLD}${PROMETHEUS_PORT}${NC} to prevent port collision."
+    else
+        PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
+    fi
+    export PROMETHEUS_PORT
 
     ENV_FILE="${PROJECT_ROOT}/.env"
     if [ ! -f "${ENV_FILE}" ]; then
@@ -211,12 +271,19 @@ MCP_AUTH_TOKEN=telecom-mcp-secret-token-change-in-prod-xyz987
 # Observability Coordinates
 LOKI_URL=http://loki:3100
 PROMETHEUS_URL=http://prometheus:9090
+PROMETHEUS_PORT=${PROMETHEUS_PORT}
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=telecom_admin
 EOF
         log_success "Wrote ${ENV_FILE}"
     else
         log_info "Using existing .env configuration file."
+        # Ensure PROMETHEUS_PORT is synchronized with the detected free port
+        if grep -q "^PROMETHEUS_PORT=" "${ENV_FILE}"; then
+            sed -i "s/^PROMETHEUS_PORT=.*/PROMETHEUS_PORT=${PROMETHEUS_PORT}/" "${ENV_FILE}"
+        else
+            echo "PROMETHEUS_PORT=${PROMETHEUS_PORT}" >> "${ENV_FILE}"
+        fi
     fi
 
     # Source the environment variables safely
@@ -237,6 +304,12 @@ deploy_containers() {
     echo -e "${CYAN}------------------------------------------------------------${NC}"
     echo "Services to provision: PostgreSQL, FastMCP Server, CRM App, Loki, Prometheus, Grafana"
     echo -e "${CYAN}------------------------------------------------------------${NC}"
+
+    # Clean up any stale or created-state container from earlier failed bind attempts
+    if ${DOCKER_CMD} ps -a --filter "name=^/telecom-prometheus$" --format '{{.Status}}' 2>/dev/null | grep -qE "Created|Exited"; then
+        log_info "Removing unstarted telecom-prometheus container from previous failed run..."
+        ${DOCKER_CMD} rm -f telecom-prometheus >/dev/null 2>&1 || true
+    fi
 
     ${COMPOSE_CMD} -f "${PROJECT_ROOT}/docker-compose.yml" up -d --build --remove-orphans
     log_success "All container services dispatched to background."
@@ -298,7 +371,7 @@ verify_and_test_stack() {
     wait_for_endpoint "Loki Audit Log Engine" "http://localhost:3100/ready" "200"
 
     # 5. Check Prometheus Telemetry Engine
-    wait_for_endpoint "Prometheus Telemetry Engine" "http://localhost:9090/-/healthy" "200"
+    wait_for_endpoint "Prometheus Telemetry Engine" "http://localhost:${PROMETHEUS_PORT}/-/healthy" "200"
 
     # 6. Check Grafana Visual Command Center
     wait_for_endpoint "Grafana Command Center" "http://localhost:3000/api/health" "200"
@@ -351,7 +424,7 @@ display_service_summary() {
     printf "  %-30s %s\n" "FastMCP Server Health:"     "http://${HOST_IP}:8001/health"
     printf "  %-30s %s\n" "Grafana Command Center:"    "http://${HOST_IP}:3000"
     printf "  %-30s %s\n" "  -> Grafana Credentials:"   "User: ${grafana_user} | Pass: ${grafana_pass}"
-    printf "  %-30s %s\n" "Prometheus Metrics Engine:"  "http://${HOST_IP}:9090"
+    printf "  %-30s %s\n" "Prometheus Metrics Engine:"  "http://${HOST_IP}:${PROMETHEUS_PORT}"
     printf "  %-30s %s\n" "Loki Log Ingestion Stream:"  "http://${HOST_IP}:3100"
     printf "  %-30s %s\n" "PostgreSQL Database:"        "postgresql://telecom_user:telecom_secure_pass@${HOST_IP}:5432/telecom_db"
     echo ""

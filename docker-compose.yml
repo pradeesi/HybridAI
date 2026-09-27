@@ -14,7 +14,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telecom_secure_pass}
       POSTGRES_DB: ${POSTGRES_DB:-telecom_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +40,7 @@ services:
       LOKI_URL: http://loki:3100
       LOG_LEVEL: INFO
     ports:
-      - "8001:8001"
+      - "${MCP_PORT:-8001}:8001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,7 +70,7 @@ services:
       LOKI_URL: http://loki:3100
       LOG_LEVEL: INFO
     ports:
-      - "8000:8000"
+      - "${CRM_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,7 +93,7 @@ services:
       - ./deploy/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     ports:
-      - "3100:3100"
+      - "${LOKI_PORT:-3100}:3100"
     networks:
       - telecom-net
 
@@ -105,7 +105,7 @@ services:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     networks:
       - telecom-net
 
@@ -124,7 +124,7 @@ services:
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
       - loki
