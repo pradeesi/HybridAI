@@ -91,6 +91,38 @@ def validate_token(token: Optional[str]) -> bool:
     return False
 
 
+def decode_jwt_unverified(token: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Summary:
+        Decodes the payload of a JSON Web Token (JWT) without cryptographic verification.
+        Used for audit logging and extracting user identity claims from tokens pre-validated by Cloud Run IAM.
+
+    Parameters:
+        token (Optional[str]): Bearer token string or raw JWT.
+
+    Return Value:
+        Optional[Dict[str, Any]]: Parsed payload dictionary if valid base64url JSON, None otherwise.
+    """
+    if not token or not isinstance(token, str):
+        return None
+
+    cleaned = token.strip()
+    if cleaned.lower().startswith("bearer "):
+        cleaned = cleaned[7:].strip()
+
+    parts = cleaned.split(".")
+    if (len(parts) == 3 or len(parts) == 2) and cleaned.startswith("eyJ"):
+        try:
+            import base64
+            import json
+            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+            payload_raw = base64.urlsafe_b64decode(padded)
+            return json.loads(payload_raw)
+        except Exception:
+            return None
+    return None
+
+
 def extract_caller_identity(
     token: Optional[str] = None,
     user_email_header: Optional[str] = None,
@@ -101,8 +133,8 @@ def extract_caller_identity(
     """
     Summary:
         Extracts the individual human contact center agent or caller identity from
-        tool arguments, Google IAP headers, OIDC JWT claims, or client headers.
-        Guarantees non-repudiation and regulatory compliance tracking.
+        Google IAP headers, OIDC JWT claims, client headers, or tool payload metadata.
+        Guarantees non-repudiation and audit tracking without requiring manual user input.
 
     Parameters:
         token (Optional[str]): Bearer token string or X-Serverless-Authorization string.
@@ -112,58 +144,58 @@ def extract_caller_identity(
         request_headers (Optional[Dict[str, str]]): Complete incoming HTTP request headers mapping.
 
     Return Value:
-        str: Extracted user identity (e.g. 'sarah.jenkins@telecom.com') or categorized fallback.
+        str: Extracted user identity (e.g. 'admin@pradeesi.altostrat.com') or categorized fallback.
     """
-    # 1. Explicit agent email provided via tool arguments or MCP _meta payload
-    if payload_user and payload_user.strip():
-        return payload_user.strip()
-
-    # 2. Google Cloud IAP Header: 'accounts.google.com:user@example.com'
-    if user_email_header:
-        clean = user_email_header.replace("accounts.google.com:", "").strip()
-        if clean:
-            return clean
-
     headers = {k.lower(): v for k, v in (request_headers or {}).items()}
 
-    # 3. Additional Google Identity and End-User email headers
-    for h in ("x-goog-authenticated-user-email", "x-goog-user-email", "x-end-user-email", "x-user-email", "x-agent-identity", "x-agent-email"):
-        val = headers.get(h)
-        if val and val.strip():
-            clean = val.replace("accounts.google.com:", "").strip()
+    # 1. Google Cloud IAP Header: 'accounts.google.com:user@example.com'
+    iap_candidates = [
+        user_email_header,
+        headers.get("x-goog-authenticated-user-email"),
+        headers.get("x-goog-authenticated-user-id"),
+        headers.get("x-goog-user-email"),
+        headers.get("x-end-user-email"),
+        headers.get("x-user-email"),
+        headers.get("x-forwarded-email"),
+        headers.get("x-forwarded-user")
+    ]
+    for candidate in iap_candidates:
+        if candidate and str(candidate).strip():
+            clean = str(candidate).replace("accounts.google.com:", "").strip()
             if clean:
                 return clean
 
-    # 4. Custom Agent identity header parameter
-    if custom_agent_header and custom_agent_header.strip():
-        return custom_agent_header.strip()
+    # 2. Custom Agent identity headers
+    agent_header_candidates = [
+        custom_agent_header,
+        headers.get("x-agent-identity"),
+        headers.get("x-agent-email"),
+        headers.get("x-caller-identity")
+    ]
+    for candidate in agent_header_candidates:
+        if candidate and str(candidate).strip():
+            clean = str(candidate).strip()
+            if clean:
+                return clean
 
-    # 5. Decoded Google Cloud Identity / OIDC JWT payload claims
-    if token:
-        cleaned = token.strip()
-        if cleaned.lower().startswith("bearer "):
-            cleaned = cleaned[7:].strip()
-        parts = cleaned.split(".")
-        if (len(parts) == 3 or len(parts) == 2) and cleaned.startswith("eyJ"):
-            try:
-                import base64
-                import json
-                padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
-                payload_raw = base64.urlsafe_b64decode(padded)
-                payload = json.loads(payload_raw)
+    # 3. Decoded Google Cloud Identity / OIDC JWT payload claims
+    raw_token = token or headers.get("authorization") or headers.get("x-serverless-authorization")
+    jwt_claims = decode_jwt_unverified(raw_token)
+    if jwt_claims:
+        # Check human email or subject in claims
+        if "email" in jwt_claims and jwt_claims["email"]:
+            email = str(jwt_claims["email"]).strip()
+            if "gserviceaccount.com" in email:
+                return f"service-account:{email}"
+            return email
+        if "preferred_username" in jwt_claims and jwt_claims["preferred_username"]:
+            return str(jwt_claims["preferred_username"]).strip()
+        if "sub" in jwt_claims and jwt_claims["sub"]:
+            return f"user:{jwt_claims['sub']}"
 
-                # Check for human email or subject in claims
-                if "email" in payload and payload["email"]:
-                    email = payload["email"]
-                    if "gserviceaccount.com" in email:
-                        return f"service-account:{email}"
-                    return email
-                if "preferred_username" in payload and payload["preferred_username"]:
-                    return payload["preferred_username"]
-                if "sub" in payload and payload["sub"]:
-                    return f"user:{payload['sub']}"
-            except Exception:
-                pass
+    # 4. Fallback: Explicit user email in MCP payload arguments or _meta payload
+    if payload_user and str(payload_user).strip():
+        return str(payload_user).strip()
 
     return "gemini-enterprise-agent"
 

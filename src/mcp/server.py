@@ -18,6 +18,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from src.core.audit import audit_client
 from src.core.config import settings
 from src.core.security import (
+    decode_jwt_unverified,
     extract_caller_identity,
     extract_security_context,
     validate_bearer_token,
@@ -136,6 +137,8 @@ async def verify_auth_token(
 
 
 # Tool Catalog Definition (MCP Specification standard)
+# Note: Agent identity is extracted automatically from request headers and JWT tokens,
+# NOT requested as a tool parameter from the user.
 TOOL_DEFINITIONS = [
     {
         "name": "search_customer",
@@ -144,8 +147,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number (e.g. '+1 (555) 234-5678' or digits '5552345678'). Primary unique identity."},
-                "query": {"type": "string", "description": "Alternative search keyword: phone number, account ID, or general search."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "query": {"type": "string", "description": "Alternative search keyword: phone number, account ID, or general search."}
             }
         }
     },
@@ -156,8 +158,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number used as primary identity."},
-                "customer_id": {"type": "string", "description": "Internal Customer UUID (optional if phone_number is supplied)."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "customer_id": {"type": "string", "description": "Internal Customer UUID (optional if phone_number is supplied)."}
             }
         }
     },
@@ -168,8 +169,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to automatically diagnose their active service."},
-                "service_id": {"type": "string", "description": "Subscription UUID (optional if phone_number is supplied)."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "service_id": {"type": "string", "description": "Subscription UUID (optional if phone_number is supplied)."}
             }
         }
     },
@@ -181,8 +181,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to locate and reboot premise equipment."},
                 "device_id": {"type": "string", "description": "Hardware device UUID (optional if phone_number is supplied)."},
-                "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "action": {"type": "string", "enum": ["reboot", "channel_optimization", "ping_sweep"], "description": "Action to execute"}
             },
             "required": ["action"]
         }
@@ -194,8 +193,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number to resolve their service area."},
-                "postal_code": {"type": "string", "description": "Customer 5-digit postal code (optional if phone_number is supplied)."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "postal_code": {"type": "string", "description": "Customer 5-digit postal code (optional if phone_number is supplied)."}
             }
         }
     },
@@ -206,8 +204,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number."},
-                "account_id": {"type": "string", "description": "Account UUID or Account Number (optional if phone_number is supplied)."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "account_id": {"type": "string", "description": "Account UUID or Account Number (optional if phone_number is supplied)."}
             }
         }
     },
@@ -218,8 +215,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string", "description": "Subscriber Mobile or Landline phone number."},
-                "customer_id": {"type": "string", "description": "Customer UUID (optional if phone_number is supplied)."},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "customer_id": {"type": "string", "description": "Customer UUID (optional if phone_number is supplied)."}
             }
         }
     },
@@ -236,8 +232,7 @@ TOOL_DEFINITIONS = [
                 "resolution_summary": {"type": "string", "description": "Solution provided"},
                 "call_duration_sec": {"type": "integer", "description": "Call duration in seconds"},
                 "upsell_offered": {"type": "boolean", "description": "Was an upsell offer pitched"},
-                "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"},
-                "agent_email": {"type": "string", "description": "Authenticated email of the contact center agent invoking this tool for audit logging."}
+                "upsell_accepted": {"type": "boolean", "description": "Did the customer accept"}
             },
             "required": ["issue_summary", "resolution_summary"]
         }
@@ -277,11 +272,32 @@ async def metrics():
 
 
 @app.get("/tools")
-async def list_tools(auth: str = Depends(verify_auth_token)):
+async def list_tools(request: Request, auth: str = Depends(verify_auth_token)):
     """
     Summary:
         Returns list of available MCP tools and their JSON schemas.
     """
+    raw_headers = dict(request.headers)
+    token_candidate = raw_headers.get("authorization") or raw_headers.get("x-serverless-authorization") or raw_headers.get("x-mcp-token")
+    jwt_claims = decode_jwt_unverified(token_candidate)
+    security_context = getattr(
+        request.state,
+        "security_context",
+        extract_security_context(
+            headers=raw_headers,
+            client_ip=request.client.host if request.client else None
+        )
+    )
+    await audit_client.log_http_request(
+        endpoint=request.url.path,
+        method=request.method,
+        headers=raw_headers,
+        body={"action": "list_tools", "count": len(TOOL_DEFINITIONS)},
+        caller_identity=auth,
+        security_context=security_context,
+        jwt_claims=jwt_claims,
+        status="LISTED"
+    )
     return {"tools": TOOL_DEFINITIONS}
 
 
@@ -291,17 +307,48 @@ async def execute_tool(request: Request, auth: str = Depends(verify_auth_token))
     Summary:
         Direct JSON-RPC tool execution endpoint consumed by Gemini Enterprise or HTTP agent bridges.
     """
-    body = await request.json()
-    tool_name = body.get("name")
-    arguments = body.get("arguments", {})
+    raw_headers = dict(request.headers)
+    token_candidate = raw_headers.get("authorization") or raw_headers.get("x-serverless-authorization") or raw_headers.get("x-mcp-token")
+    jwt_claims = decode_jwt_unverified(token_candidate)
     security_context = getattr(
         request.state,
         "security_context",
         extract_security_context(
-            headers=dict(request.headers),
+            headers=raw_headers,
             client_ip=request.client.host if request.client else None
         )
     )
+
+    try:
+        body = await request.json()
+    except Exception:
+        raw_bytes = await request.body()
+        raw_text = raw_bytes.decode("utf-8", errors="replace")
+        await audit_client.log_http_request(
+            endpoint=request.url.path,
+            method=request.method,
+            headers=raw_headers,
+            body=raw_text,
+            caller_identity=auth,
+            security_context=security_context,
+            jwt_claims=jwt_claims,
+            status="INVALID_JSON"
+        )
+        raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
+
+    await audit_client.log_http_request(
+        endpoint=request.url.path,
+        method=request.method,
+        headers=raw_headers,
+        body=body,
+        caller_identity=auth,
+        security_context=security_context,
+        jwt_claims=jwt_claims,
+        status="RECEIVED"
+    )
+
+    tool_name = body.get("name")
+    arguments = body.get("arguments", {})
     caller_id = arguments.get("agent_email") or body.get("caller_id") or auth
 
     if not tool_name or tool_name not in TOOL_HANDLER_MAP:
@@ -448,6 +495,28 @@ async def mcp_sse_stream(
         Server-Sent Events (SSE) and HTTP discovery endpoint implementing MCP connectivity.
         Supports streaming text/event-stream for SSE and direct JSON tool listing for HTTP callers.
     """
+    raw_headers = dict(request.headers)
+    token_candidate = raw_headers.get("authorization") or raw_headers.get("x-serverless-authorization") or raw_headers.get("x-mcp-token")
+    jwt_claims = decode_jwt_unverified(token_candidate)
+    security_context = getattr(
+        request.state,
+        "security_context",
+        extract_security_context(
+            headers=raw_headers,
+            client_ip=request.client.host if request.client else None
+        )
+    )
+
+    await audit_client.log_http_request(
+        endpoint=request.url.path,
+        method=request.method,
+        headers=raw_headers,
+        body={"action": "sse_connect", "accept": request.headers.get("accept", "")},
+        caller_identity=auth,
+        security_context=security_context,
+        jwt_claims=jwt_claims,
+        status="CONNECTED"
+    )
 
     accept_header = request.headers.get("accept", "")
     if "text/event-stream" not in accept_header:
@@ -492,19 +561,48 @@ async def handle_mcp_message(request: Request, auth: str = Depends(verify_auth_t
     Summary:
         MCP JSON-RPC message endpoint. Dispatches initialize, ping, tools/list, or tools/call commands.
         Handles both individual and batch JSON-RPC payloads from Gemini Enterprise or AI agents.
+        Logs every incoming request header and message body payload to Loki for audit and security analysis.
     """
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
+    raw_headers = dict(request.headers)
+    token_candidate = raw_headers.get("authorization") or raw_headers.get("x-serverless-authorization") or raw_headers.get("x-mcp-token")
+    jwt_claims = decode_jwt_unverified(token_candidate)
 
     security_context = getattr(
         request.state,
         "security_context",
         extract_security_context(
-            headers=dict(request.headers),
+            headers=raw_headers,
             client_ip=request.client.host if request.client else None
         )
+    )
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raw_bytes = await request.body()
+        raw_text = raw_bytes.decode("utf-8", errors="replace")
+        await audit_client.log_http_request(
+            endpoint=request.url.path,
+            method=request.method,
+            headers=raw_headers,
+            body=raw_text,
+            caller_identity=auth,
+            security_context=security_context,
+            jwt_claims=jwt_claims,
+            status="INVALID_JSON"
+        )
+        raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
+
+    # Log complete headers and body of the message to Loki
+    await audit_client.log_http_request(
+        endpoint=request.url.path,
+        method=request.method,
+        headers=raw_headers,
+        body=payload,
+        caller_identity=auth,
+        security_context=security_context,
+        jwt_claims=jwt_claims,
+        status="RECEIVED"
     )
 
     if isinstance(payload, list):

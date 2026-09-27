@@ -194,6 +194,115 @@ class LokiAuditClient:
             # Fallback defensively: audit log is already recorded to stdout, avoid crashing caller
             logger.debug("Loki shipping bypassed (service unreachable): %s", exc)
 
+    async def log_http_request(
+        self,
+        endpoint: str,
+        method: str,
+        headers: Dict[str, str],
+        body: Any,
+        caller_identity: str,
+        security_context: Optional[Dict[str, Any]] = None,
+        jwt_claims: Optional[Dict[str, Any]] = None,
+        status: str = "RECEIVED"
+    ) -> None:
+        """
+        Summary:
+            Logs the complete incoming HTTP request including all headers and full message body to Loki.
+            Allows operators to inspect raw Gemini Enterprise payloads, headers, and authentication claims.
+
+        Parameters:
+            endpoint (str): Request URL path (e.g. '/mcp', '/messages', '/execute').
+            method (str): HTTP method ('POST', 'GET').
+            headers (Dict[str, str]): Complete incoming HTTP request headers mapping.
+            body (Any): Complete message body (parsed JSON or raw text).
+            caller_identity (str): Resolved identity of the caller.
+            security_context (Optional[Dict[str, Any]]): Security and network context (IP, trace ID, auth method).
+            jwt_claims (Optional[Dict[str, Any]]): Decoded JWT claims from Authorization token if available.
+            status (str): Processing status of the incoming message ('RECEIVED', 'PROCESSED', 'FAILED').
+
+        Return Value:
+            None
+        """
+        timestamp_ns = str(time.time_ns())
+        timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        sec_ctx = security_context or {}
+        caller_type = sec_ctx.get(
+            "caller_type",
+            "HUMAN_AGENT" if "@" in caller_identity and "gserviceaccount" not in caller_identity else "SERVICE_AGENT"
+        )
+        client_ip = sec_ctx.get("client_ip", "N/A")
+        user_agent = sec_ctx.get("user_agent", "N/A")
+        trace_id = sec_ctx.get("trace_id", "N/A")
+        auth_method = sec_ctx.get("auth_method", "BEARER_TOKEN")
+
+        # Sanitize sensitive static server tokens from authorization header display if needed
+        sanitized_headers = dict(headers)
+        if "authorization" in sanitized_headers:
+            auth_val = sanitized_headers["authorization"]
+            if settings.MCP_AUTH_TOKEN and settings.MCP_AUTH_TOKEN in auth_val:
+                sanitized_headers["authorization"] = "Bearer [STATIC_MCP_AUTH_TOKEN]"
+
+        payload_data = {
+            "timestamp": timestamp_iso,
+            "event_type": "MCP_HTTP_REQUEST",
+            "endpoint": endpoint,
+            "method": method,
+            "caller": caller_identity,
+            "caller_type": caller_type,
+            "client_ip": client_ip,
+            "user_agent": user_agent,
+            "trace_id": trace_id,
+            "auth_method": auth_method,
+            "status": status,
+            "headers": sanitized_headers,
+            "jwt_claims": jwt_claims or {},
+            "body": body
+        }
+        log_line = json.dumps(payload_data, default=str)
+
+        # Log locally for guaranteed container stdout collection
+        logger.info("AUDIT_HTTP_REQUEST: %s", log_line)
+
+        # Ship asynchronously to Loki if endpoint is configured
+        if not self._push_endpoint:
+            return
+
+        loki_payload = {
+            "streams": [
+                {
+                    "stream": {
+                        "job": "telecom-mcp-audit",
+                        "app": "hybrid-ai",
+                        "env": settings.APP_ENV,
+                        "event_type": "MCP_HTTP_REQUEST",
+                        "tool": endpoint,
+                        "caller": caller_identity,
+                        "caller_type": caller_type,
+                        "status": status,
+                        "auth_method": auth_method
+                    },
+                    "values": [
+                        [timestamp_ns, log_line]
+                    ]
+                }
+            ]
+        }
+
+        req_headers = {"Content-Type": "application/json"}
+        req_headers.update(self._get_auth_header())
+
+        try:
+            response = await self._http_client.post(
+                self._push_endpoint,
+                json=loki_payload,
+                headers=req_headers
+            )
+            if response.status_code not in (200, 204):
+                logger.warning("Loki returned non-success response %d for HTTP audit: %s", response.status_code, response.text)
+        except Exception as exc:
+            logger.debug("Loki HTTP shipping bypassed: %s", exc)
+
     async def close(self) -> None:
         """
         Summary:

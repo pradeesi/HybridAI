@@ -716,11 +716,13 @@ In enterprise contact center operations, complete accountability and auditabilit
 - **Strict Subscriber Privacy on AI Surface**: In MCP responses consumed by AI agents, subscriber names (`E**** R******`), emails (`e***@***.com`), street addresses, SSNs, and payment cards are strictly masked. Only the Mobile / Landline number is unmasked.
 - **Independent CRM Console**: The human Contact Center Agent has access to the independent internal CRM console (`http://localhost:8000`), where full customer names and account details are displayed so the human agent can interact respectfully and address subscriber concerns.
 
-#### Full Request & Response Logging in Grafana Loki:
-Every MCP tool invocation automatically captures and streams structured JSON to Grafana Loki and Cloud Logging:
-- **`request`**: The exact parameters sent to the tool (e.g. `phone_number`, `agent_email`, `query`).
-- **`response`**: The complete sanitized output returned by the tool.
-- **`caller`**: The authenticated human agent's corporate email (e.g. `admin@pradeesi.altostrat.com`).
+#### Full Header, Message Body, Request & Response Logging in Grafana Loki:
+Every incoming HTTP message and MCP tool invocation automatically captures and streams structured JSON to Grafana Loki:
+- **`headers` & `body`**: Complete incoming HTTP headers and raw message body logged on every request (`event_type: MCP_HTTP_REQUEST`).
+- **`jwt_claims`**: Decoded Google Cloud / Gemini Enterprise OIDC token claims (`email`, `sub`, `iss`, `aud`).
+- **`request`**: The exact business parameters passed to the tool (e.g. `phone_number`, `query`).
+- **`response`**: The complete sanitized output returned by the tool (`event_type: MCP_TOOL_EXECUTION`).
+- **`caller`**: The authenticated Contact Center Agent's email automatically resolved from request headers/tokens (e.g. `admin@pradeesi.altostrat.com`).
 - **`caller_type`**: `HUMAN_AGENT` vs `SERVICE_AGENT`.
 - **`client_ip` & `trace_id`**: Real edge proxy IP and Google Cloud distributed trace context.
 
