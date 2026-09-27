@@ -8,10 +8,11 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, Request, status
+from fastapi import FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
@@ -63,6 +64,18 @@ async def health():
         Health check endpoint for CRM service.
     """
     return {"status": "healthy", "service": "telecom-crm-console"}
+
+
+@app.get("/metrics")
+async def metrics():
+    """
+    Summary:
+        Exposes Prometheus metrics for scraping.
+
+    Return Value:
+        Response: Plaintext Prometheus metrics payload.
+    """
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/", response_class=HTMLResponse)
