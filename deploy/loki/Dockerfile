@@ -1,4 +1,4 @@
-# Purpose: Container definition for Grafana Loki running on Cloud Run and Kubernetes.
+# Purpose: Container definition for Grafana Loki running on Cloud Run and on-prem Proxmox.
 # Architecture/Context: Log ingestion and LogQL TSDB service.
 FROM grafana/loki:3.0.0
 

@@ -1,4 +1,4 @@
-# Purpose: Container definition for Prometheus metrics engine on Cloud Run and Kubernetes.
+# Purpose: Container definition for Prometheus metrics engine on Cloud Run and on-prem Proxmox.
 # Architecture/Context: Scrapes /metrics from MCP server and CRM console.
 FROM prom/prometheus:v2.50.1
 

@@ -1,7 +1,7 @@
 <!--
   Purpose: Primary documentation, architectural specification, local execution instructions, and cloud/on-prem deployment playbooks for the Telecom Customer Care Hybrid AI Platform.
   Architecture/Context: Central guide for developers, AI engineers, and operators deploying the FastMCP server, CRM agent console, and observability stack across any environment.
-  Dependencies/Side Effects: Governs environment configuration and multi-target deployment (Bare-Metal Python, Docker Compose, Cloud Run, GKE).
+  Dependencies/Side Effects: Governs environment configuration and standardized deployment targets: Cloud (Google Cloud Run) and On-Premises (Proxmox VE / Ubuntu VM & Docker Compose).
 -->
 
 # Telecom Customer Care Hybrid AI Platform & Secure FastMCP Server
@@ -224,97 +224,172 @@ Choose the playbook that fits your target environment:
 
 ---
 
-### Playbook B: Home Lab & Bare-Metal Edge Server (Docker Compose)
+### Playbook B: On-Premises Proxmox VE (Ubuntu VM / LXC & Docker Compose)
 
-*Ideal for self-hosted production in a home lab (e.g. Proxmox LXC container or VM on an x86 host) with complete observability. **Docker Compose takes care of 100% of the installation, provisioning, and pre-wiring for PostgreSQL, Grafana, Prometheus, and Loki automatically—no manual package installation is required on the host.***
+*Standardized on-premises deployment on **Proxmox VE**, running the entire platform inside a dedicated **Ubuntu Server VM** (or lightweight LXC container). Docker Compose handles 100% of the orchestration, persistence, and pre-wiring for all 6 microservices—zero manual database or package compilation required.*
 
-#### What Docker Compose Installs & Configures Automatically:
-- **PostgreSQL 16 (`postgres:16-alpine`)**: Containerized database engine with persistent volume (`pg_data`) and automatic synthetic data bootstrapping.
-- **Prometheus 2.50+ (`prom/prometheus:v2.50.1`)**: Automated metrics scraper pre-configured with [`deploy/prometheus/prometheus.yml`](deploy/prometheus/prometheus.yml).
-- **Grafana Loki 3.0+ (`grafana/loki:3.0.0`)**: Centralized TSDB log engine pre-configured with [`deploy/loki/loki-config.yml`](deploy/loki/loki-config.yml).
-- **Grafana 10.4+ (`grafana/grafana:10.4.0`)**: Pre-provisioned with Prometheus & Loki datasources and auto-loaded Security Audit & Contact Center Ops dashboards.
+#### What Runs Inside the Ubuntu Environment:
+- **FastMCP Server (`telecom-mcp-server`)**: Hardened SSE / JSON-RPC tool server (port 8001).
+- **CRM Agent Console (`telecom-crm-console`)**: Frontline web UI with customer 360 and diagnostics (port 8000).
+- **PostgreSQL 16 (`postgres:16-alpine`)**: Relational database with persistent volume (`pg_data`) and auto-seeded personas (port 5432).
+- **Prometheus 2.50+ (`prom/prometheus:v2.50.1`)**: Automated metrics scraper pre-configured with [`deploy/prometheus/prometheus.yml`](deploy/prometheus/prometheus.yml) (port 9090).
+- **Grafana Loki 3.0+ (`grafana/loki:3.0.0`)**: Centralized TSDB log and audit engine pre-configured with [`deploy/loki/loki-config.yml`](deploy/loki/loki-config.yml) (port 3100).
+- **Grafana 10.4+ (`grafana/grafana:10.4.0`)**: Pre-provisioned with Prometheus & Loki datasources and auto-loaded AI Agent Observability dashboards (port 3000).
 
 ---
 
-#### Step-by-Step Instructions for Proxmox VE (x86 Bare-Metal Host):
+#### Step-by-Step Instructions for Proxmox VE:
 
-1. **Step 1: Provision an Environment in Proxmox VE**
-   *You can choose either a lightweight LXC container (fastest, lowest overhead) or a standard KVM Virtual Machine:*
+##### Option 1: Standard Ubuntu Server VM on Proxmox (Recommended)
+*Running inside a dedicated Ubuntu 24.04 or 22.04 LTS VM provides complete kernel isolation, native Docker storage drivers (overlay2), and maximum stability.*
 
-   - **Option A: Lightweight LXC Container (Recommended)**:
-     1. Open your Proxmox VE Web GUI (`https://<proxmox-ip>:8006`).
-     2. Click **Create CT** (top right):
-        - **General**: Set Hostname (e.g., `telecom-hybrid-ai`), uncheck *Unprivileged container* (or keep unprivileged with nesting enabled).
-        - **Template**: Select `ubuntu-22.04-standard` (or `debian-12-standard`).
-        - **Disks**: Allocate `30 GB` or more on your fast storage pool.
-        - **CPU**: Allocate `4 Cores`.
-        - **Memory**: Allocate `8192 MB` (8 GB RAM) and `1024 MB` swap.
-        - **Network**: Bridge `vmbr0`, IPv4: DHCP or Static IP.
-     3. **Crucial Docker Setting for Proxmox LXC**:
-        - Before starting the container, click on the newly created CT -> **Options** -> double-click **Features** -> Check **Nesting** (`nesting=1`) and **keyctl** (`keyctl=1`).
-        - Click **OK**, then click **Start**.
+1. **Create the Ubuntu VM in Proxmox VE**:
+   - Open Proxmox VE Web GUI (`https://<proxmox-host-ip>:8006`).
+   - Click **Create VM** (top right):
+     - **General**: VM ID `100` (or next free), Name: `telecom-hybrid-ai`.
+     - **OS**: Select **Ubuntu Server 24.04 / 22.04 LTS ISO** image.
+     - **System**: Machine: Default (`q35` or `i440fx`), SCSI Controller: `VirtIO SCSI single`, Qemu Agent: Checked.
+     - **Disks**: Device: `SCSI`, Disk size: `32 GB` (or larger), Storage: `local-lvm` (or ZFS pool), Discard: Checked.
+     - **CPU**: Sockets: `1`, Cores: `4`, Type: `host` (for optimal AES/virtualization performance).
+     - **Memory**: `8192 MB` (8 GB RAM).
+     - **Network**: Bridge: `vmbr0`, Model: `VirtIO (paravirtualized)`, Firewall: Checked.
+   - Click **Finish**, start the VM, and complete the standard Ubuntu Server OS installation.
 
-     *(Alternative: Run directly from the Proxmox Host Root Shell):*
-     ```bash
-     pct create 200 local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
-       --hostname telecom-hybrid-ai \
-       --cores 4 \
-       --memory 8192 \
-       --rootfs local-lvm:30 \
-       --net0 name=eth0,bridge=vmbr0,ip=dhcp \
-       --features nesting=1,keyctl=1 \
-       --start 1
-     ```
-
-   - **Option B: Standard QEMU/KVM Virtual Machine**:
-     - Click **Create VM**: Assign 4 vCPUs, 8 GB RAM, 32 GB SSD, and install Ubuntu Server 22.04 or Debian 12.
-
-2. **Step 2: Install Docker Engine & Git Inside the Guest (LXC / VM)**:
-   *Open the Proxmox Console for your container/VM and run:*
+   *(CLI Alternative directly from Proxmox Root Shell):*
    ```bash
-   apt update && apt install -y docker.io docker-compose-v2 git curl
-   systemctl enable --now docker
+   qm create 100 --name telecom-hybrid-ai \
+     --memory 8192 --cores 4 --cpu host \
+     --net0 virtio,bridge=vmbr0 \
+     --scsihw virtio-scsi-single \
+     --scsi0 local-lvm:32,discard=on \
+     --boot order=scsi0;ide2 \
+     --ide2 local:iso/ubuntu-24.04-live-server-amd64.iso,media=cdrom \
+     --agent 1
+   qm start 100
    ```
 
-3. **Step 3: (Recommended) Mesh VPN Configuration (Tailscale)**:
-   *Gives your node a secure, private encrypted IP reachable from your laptop or cloud without opening any ports on your home router:*
+2. **Install Docker Engine & Git Inside the Ubuntu VM**:
+   *SSH into the Ubuntu VM or open the Proxmox NoVNC Console:*
+   ```bash
+   # 1. Update package lists and install prerequisites
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install -y ca-certificates curl gnupg git jq
+
+   # 2. Add Docker official GPG key and APT repository
+   sudo install -m 0755 -d /etc/apt/keyrings
+   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+   sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+   echo \
+     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+     $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+     sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+   # 3. Install Docker Engine and Docker Compose plugin
+   sudo apt update
+   sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+   # 4. Enable Docker to start on boot and allow non-root user execution
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker $USER
+   newgrp docker
+   ```
+
+3. **(Optional) Configure Private Mesh VPN (Tailscale)**:
+   *To securely access the Ubuntu VM and its services from your laptop or cloud without exposing ports on your router:*
    ```bash
    curl -fsSL https://tailscale.com/install.sh | sh
-   tailscale up
-   # Note your private node IP:
+   sudo tailscale up
    tailscale ip -4
    ```
 
-4. **Step 4: Clone & Launch Complete Platform**:
+4. **Clone Repository & Launch All 6 Services**:
    ```bash
    git clone https://github.com/pradeesi/HybridAI.git
    cd HybridAI
    cp .env.example .env
-   # Launch all 6 services with one command:
+
+   # Launch all 6 services with a single command:
    docker compose up -d --build
    ```
 
-4. **Verify All 6 Services are Healthy:**
+5. **Verify All Services are Healthy**:
    ```bash
    docker compose ps
    ```
    *Expected output: `telecom-postgres` (healthy), `telecom-mcp-server` (healthy), `telecom-crm-console` (healthy), `telecom-prometheus` (running), `telecom-loki` (running), `telecom-grafana` (running).*
 
-5. **Access Pre-Wired Endpoints:**
-   - **CRM Frontline Console**: `http://<tailscale-ip-or-host>:8000`
-   - **FastMCP Server (SSE)**: `http://<tailscale-ip-or-host>:8001/sse`
-   - **Grafana Security & Ops Dashboards**: `http://<tailscale-ip-or-host>:3000` (User: `admin` / Password: value from `.env` — Dashboards are pre-loaded!)
-   - **Prometheus Metrics**: `http://<tailscale-ip-or-host>:9090`
-   - **Loki Log API**: `http://<tailscale-ip-or-host>:3100`
-
-6. **Managing the Stack:**
+6. **(Optional) Auto-Start Stack on VM Boot**:
+   *Ensure the Docker Compose stack starts automatically whenever the Ubuntu VM reboots:*
    ```bash
-   # View unified live logs:
-   docker compose logs -f mcp-server crm-app
-   
-   # Stop the stack:
-   docker compose down
+   sudo tee /etc/systemd/system/telecom-ai.service > /dev/null <<EOF
+   [Unit]
+   Description=Telecom Hybrid AI Docker Compose Stack
+   Requires=docker.service
+   After=docker.service
+
+   [Service]
+   Type=oneshot
+   RemainAfterExit=yes
+   WorkingDirectory=$(pwd)
+   ExecStart=/usr/bin/docker compose up -d
+   ExecStop=/usr/bin/docker compose down
+   TimeoutStartSec=0
+
+   [Install]
+   WantedBy=multi-user.target
+   EOF
+
+   sudo systemctl daemon-reload
+   sudo systemctl enable telecom-ai.service
    ```
+
+---
+
+##### Option 2: Lightweight Proxmox LXC Container (Alternative)
+*If you prefer near-zero CPU/RAM virtualization overhead and fast instantiation:*
+
+1. Open Proxmox VE Web GUI (`https://<proxmox-host-ip>:8006`).
+2. Click **Create CT**:
+   - **General**: Hostname: `telecom-hybrid-ai`, uncheck *Unprivileged container* (or keep unprivileged with nesting enabled).
+   - **Template**: Select `ubuntu-24.04-standard` or `ubuntu-22.04-standard`.
+   - **Disks**: 30 GB or more on fast storage pool.
+   - **CPU**: 4 Cores.
+   - **Memory**: 8192 MB (8 GB RAM).
+   - **Network**: Bridge `vmbr0`, IPv4: DHCP or Static IP.
+3. **Mandatory Proxmox Setting for Docker in LXC**:
+   - Before starting the container: CT -> **Options** -> double-click **Features** -> Check **Nesting** (`nesting=1`) and **keyctl** (`keyctl=1`).
+4. Start container, open console, install Docker & clone repo:
+   ```bash
+   apt update && apt install -y docker.io docker-compose-v2 git curl
+   systemctl enable --now docker
+   git clone https://github.com/pradeesi/HybridAI.git
+   cd HybridAI
+   cp .env.example .env
+   docker compose up -d --build
+   ```
+
+---
+
+#### Accessing On-Premises Endpoints:
+Replace `<NODE_IP>` with your Ubuntu VM's local LAN IP (e.g. `192.168.1.50`) or Tailscale IP:
+- **CRM Frontline Console**: `http://<NODE_IP>:8000`
+- **FastMCP Server (SSE & JSON-RPC)**: `http://<NODE_IP>:8001/mcp` (SSE stream: `http://<NODE_IP>:8001/sse`)
+- **Grafana Observability Dashboards**: `http://<NODE_IP>:3000` (User: `admin` / Password: value from `.env`)
+- **Prometheus Metrics Engine**: `http://<NODE_IP>:9090`
+- **Grafana Loki Log API**: `http://<NODE_IP>:3100`
+
+#### Managing the Stack:
+```bash
+# View unified live logs:
+docker compose logs -f mcp-server crm-app
+
+# Restart services:
+docker compose restart
+
+# Stop the stack:
+docker compose down
+```
 
 ---
 
@@ -558,73 +633,6 @@ This binds to your local ports, automatically signs requests with your active `g
 
 ---
 
-### Playbook D: Google Kubernetes Engine (GKE)
-
-*Ideal for enterprise Kubernetes clusters with automated pod scaling, rolling updates, and internal load balancing.*
-
-#### 1. Enable GKE API & Provision Cluster:
-```bash
-export PROJECT_ID="your-gcp-project-id"
-export REGION="us-central1"
-export CLUSTER_NAME="telecom-hybrid-cluster"
-
-gcloud services enable container.googleapis.com
-
-# Create a modern GKE Autopilot cluster
-gcloud container clusters create-auto ${CLUSTER_NAME} \
-    --region ${REGION} \
-    --project ${PROJECT_ID}
-
-# Connect kubectl to the cluster
-gcloud container clusters get-credentials ${CLUSTER_NAME} --region ${REGION} --project ${PROJECT_ID}
-```
-
-#### 2. Deploy Database & Observability Stack via Helm:
-```bash
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update
-
-# 1. Install PostgreSQL in the cluster
-helm install telecom-pg bitnami/postgresql \
-    --set auth.username=telecom_user \
-    --set auth.password=telecom_secure_pass \
-    --set auth.database=telecom_db
-
-# 2. Install Prometheus & Grafana stack
-helm install telecom-prom prometheus-community/kube-prometheus-stack
-
-# 3. Install Grafana Loki log aggregator
-helm install telecom-loki grafana/loki-stack
-```
-
-#### 3. Create Secrets & Deploy Application Workloads:
-```bash
-# 1. Create Kubernetes Secret with credentials
-kubectl create secret generic telecom-secrets \
-    --from-literal=mcp-token="telecom-mcp-secret-token-change-in-prod-xyz987" \
-    --from-literal=database-url="postgresql+asyncpg://telecom_user:telecom_secure_pass@telecom-pg-postgresql.default.svc.cluster.local:5432/telecom_db"
-
-# 2. Update image in deployment manifest to your Artifact Registry tag and apply
-IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/hybrid-ai-repo/hybrid-ai:latest"
-sed -i "s|image: telecom-hybrid-ai:latest|image: ${IMAGE_PATH}|g" deploy/k8s/deployment.yaml
-
-kubectl apply -f deploy/k8s/deployment.yaml
-```
-
-#### 4. Access Services on GKE:
-```bash
-# Check status of pods and external load balancer service:
-kubectl get pods
-kubectl get svc telecom-crm-service
-
-# Forward Grafana port to view dashboards locally:
-kubectl port-forward svc/telecom-prom-grafana 3000:80
-```
-
----
-
 ## 7. Service Verification & Health Checks
 
 Once the services are running, verify each endpoint:
@@ -845,7 +853,8 @@ cd HybridAI
 # 1. Stop and purge only the demo containers, internal network, and demo volumes:
 docker compose down -v --rmi local --remove-orphans
 
-# 2. (Optional) ONLY if you provisioned a dedicated Proxmox LXC container (e.g. CT ID 200) exclusively for this demo:
+# 2. (Optional) ONLY if you provisioned a dedicated Proxmox VM (e.g. VM ID 105) or LXC container (e.g. CT ID 200) exclusively for this demo:
+# qm stop 105 && qm destroy 105
 # pct stop 200 && pct destroy 200
 ```
 
@@ -880,33 +889,4 @@ gcloud artifacts repositories delete hybrid-ai-repo \
 gcloud secrets delete telecom-secrets \
     --project=${PROJECT_ID} \
     --quiet 2>/dev/null || true
-```
-
----
-
-### Teardown D: Google Kubernetes Engine (GKE) (Scoped to Demo Resources)
-*Deletes only the demo pods, services, secrets, and Helm releases. Other workloads and namespaces in your cluster remain intact:*
-```bash
-# 1. Delete ONLY the demo application deployments and services:
-kubectl delete -f deploy/k8s/deployment.yaml --ignore-not-found
-kubectl delete secret telecom-secrets --ignore-not-found
-
-# 2. Uninstall ONLY the demo Helm releases:
-helm uninstall telecom-pg 2>/dev/null || true
-helm uninstall telecom-prom 2>/dev/null || true
-helm uninstall telecom-loki 2>/dev/null || true
-
-# 3. Delete ONLY the persistent volume claims created by the demo releases:
-kubectl delete pvc -l app.kubernetes.io/instance=telecom-pg --ignore-not-found
-kubectl delete pvc -l app.kubernetes.io/instance=telecom-prom --ignore-not-found
-kubectl delete pvc -l app.kubernetes.io/instance=telecom-loki --ignore-not-found
-
-# 4. Delete ONLY the demo Artifact Registry repository:
-gcloud artifacts repositories delete hybrid-ai-repo \
-    --location=${REGION} \
-    --project=${PROJECT_ID} \
-    --quiet
-
-# 5. (OPTIONAL) ONLY if you created a dedicated GKE cluster exclusively for this demo:
-# gcloud container clusters delete telecom-hybrid-cluster --region=${REGION} --project=${PROJECT_ID} --quiet
 ```
