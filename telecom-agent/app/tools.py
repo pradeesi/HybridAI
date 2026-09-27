@@ -100,11 +100,15 @@ def build_mcp_headers(
         Dict[str, str]: Map of HTTP headers to include in the MCP request.
     """
     mcp_url = agent_settings.MCP_SERVER_URL.rstrip("/")
-    is_cloud_run = (
-        agent_settings.MCP_DEPLOYMENT_TARGET.lower() == "cloud_run"
-        or (mcp_url.startswith("https://") and "run.app" in mcp_url)
-        or "8001" in mcp_url
-    )
+    target = agent_settings.MCP_DEPLOYMENT_TARGET.lower()
+
+    # In local homelab or on-prem environments, disable Cloud Run IAM checks entirely
+    if target in ("on_prem", "local", "homelab", "proxmox"):
+        is_cloud_run = False
+    elif target in ("cloud_run", "cloud", "gcp") or (mcp_url.startswith("https://") and "run.app" in mcp_url):
+        is_cloud_run = True
+    else:
+        is_cloud_run = False
 
     headers = {
         "Content-Type": "application/json",
