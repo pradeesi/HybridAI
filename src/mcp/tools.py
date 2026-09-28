@@ -1145,6 +1145,8 @@ async def log_agent_interaction_tool(
                 )
                 return error_resp
 
+            target_cust_id = target_cust.id
+
             # Defensive guard: if agent_name was set to the customer's name, fall back to agent_email or default
             clean_agent_name = agent_name
             cust_full_name = f"{target_cust.first_name} {target_cust.last_name}".strip()
@@ -1152,7 +1154,7 @@ async def log_agent_interaction_tool(
                 clean_agent_name = agent_email or (effective_caller if effective_caller != "gemini-enterprise" else "Contact Center Agent")
 
             interaction = CallInteraction(
-                customer_id=target_cust.id,
+                customer_id=target_cust_id,
                 agent_name=clean_agent_name,
                 call_duration_sec=call_duration_sec,
                 issue_summary=issue_summary,
@@ -1184,7 +1186,8 @@ async def log_agent_interaction_tool(
                 response_payload=response_data,
                 details={
                     "interaction_id": interaction.id,
-                    "agent": agent_name,
+                    "customer_id": target_cust_id,
+                    "agent": clean_agent_name,
                     "duration_sec": call_duration_sec,
                     "upsell_accepted": upsell_accepted
                 }
