@@ -825,10 +825,10 @@ Every incoming HTTP message and MCP tool invocation automatically captures and s
 - **Tools Invoked Automatically**: `search_customer` &rarr; `check_network_outages`
 - **Expected Outcome**: Resolves subscriber postal code and returns area outage status.
 
-#### Scenario 6: Call Interaction Logging & CRM Record
-* **Prompt**:
-  > *"Log this interaction for Elena Rostova (account TEL-ACC-88129): We diagnosed optical signal degradation, executed a remote reboot on her ONT terminal, confirmed line levels stabilized, and offered a Gigabit upgrade pitch. Call duration 240 seconds."*
-- **Tool Invoked Automatically**: `log_agent_interaction` (`customer_id=...`, `issue_summary=...`, `resolution_summary=...`, `upsell_offered=True`)
+#### Scenario 6: Call Interaction Logging & CRM Record (Phone `+1 (555) 234-5678`)
+* **Phone-Driven Prompt**:
+  > *"Log this interaction for subscriber phone +1 (555) 234-5678 (Elena Rostova, account TEL-ACC-88129): We diagnosed optical signal degradation, executed a remote reboot on her ONT terminal, confirmed line levels stabilized, and offered a Gigabit upgrade pitch. Call duration 240 seconds."*
+- **Tool Invoked Automatically**: `log_agent_interaction` (`phone_number="+1 (555) 234-5678"`, `issue_summary=...`, `resolution_summary=...`, `upsell_offered=True`, `call_duration_sec=240`)
 - **Expected Outcome**: Persists structured call record into the database, updates CRM dashboard, and records audit trail entry.
 
 ---
