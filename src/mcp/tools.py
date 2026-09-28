@@ -1119,13 +1119,16 @@ async def log_agent_interaction_tool(
 
     async with AsyncSessionLocal() as session:
         try:
-            target_cust_id = customer_id
-            if not target_cust_id and phone_number and str(phone_number).strip():
-                cust = await _resolve_customer(session, phone_number=phone_number)
-                if cust:
-                    target_cust_id = cust.id
+            target_cust = None
+            if phone_number or customer_id:
+                target_cust = await _resolve_customer(
+                    session,
+                    phone_number=phone_number,
+                    customer_id=customer_id,
+                    query=customer_id if (customer_id and not phone_number) else None
+                )
 
-            if not target_cust_id:
+            if not target_cust:
                 error_resp = {
                     "status": "error",
                     "message": f"Cannot log interaction: subscriber '{phone_number or customer_id}' not found."
@@ -1142,9 +1145,15 @@ async def log_agent_interaction_tool(
                 )
                 return error_resp
 
+            # Defensive guard: if agent_name was set to the customer's name, fall back to agent_email or default
+            clean_agent_name = agent_name
+            cust_full_name = f"{target_cust.first_name} {target_cust.last_name}".strip()
+            if not clean_agent_name or clean_agent_name in (cust_full_name, target_cust.first_name, target_cust.last_name):
+                clean_agent_name = agent_email or (effective_caller if effective_caller != "gemini-enterprise" else "Contact Center Agent")
+
             interaction = CallInteraction(
-                customer_id=target_cust_id,
-                agent_name=agent_name,
+                customer_id=target_cust.id,
+                agent_name=clean_agent_name,
                 call_duration_sec=call_duration_sec,
                 issue_summary=issue_summary,
                 resolution_summary=resolution_summary,
